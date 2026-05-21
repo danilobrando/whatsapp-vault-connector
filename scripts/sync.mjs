@@ -37,7 +37,8 @@ import { fileURLToPath } from 'url'
 const __dir = path.dirname(fileURLToPath(import.meta.url))
 const INCLUDE_GROUPS = process.argv.includes('--groups')
 
-const VAULT_ROOT = process.env.VAULT_ROOT || path.resolve(__dir, '..', '..', '..')
+// Standard install path: <vault>/connectors/whatsapp/  (this file lives 2 dirs deep)
+const VAULT_ROOT = process.env.VAULT_ROOT || path.resolve(__dir, '..', '..')
 const OUTPUT_DIR = path.join(VAULT_ROOT, process.env.WA_OUTPUT || '⚙️ Meta/whatsapp-inbox')
 const AUTH_DIR   = path.join(__dir, 'baileys_auth')
 const STORE_FILE = path.join(__dir, 'baileys_store.json')

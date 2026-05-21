@@ -82,7 +82,10 @@ ok "Timezone: $TZ_VAL"
 # across installs; env override supports multi-user / multi-install machines.
 LAUNCHD_LABEL_DAEMON="${WHATSAPP_DAEMON_LABEL:-com.whatsapp-connector.daemon}"
 LAUNCHD_LABEL_WATCHDOG="${WHATSAPP_WATCHDOG_LABEL:-com.whatsapp-connector.watchdog}"
-SCRIPTS_DIR="$VAULT_ROOT/⚙️ Meta/scripts/whatsapp"
+# Standard install location for second-brain connectors. Keeping all connectors
+# under <vault>/connectors/ avoids emoji-laden paths and groups operational
+# state in one tree that's easy to back up / migrate / uninstall.
+SCRIPTS_DIR="$VAULT_ROOT/connectors/whatsapp"
 
 say ""
 say "About to install with:"

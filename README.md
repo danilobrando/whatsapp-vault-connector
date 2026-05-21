@@ -36,7 +36,9 @@ The installer is interactive but only asks three things:
 2. Your display name as it should appear on outbound messages saved to the vault (default: `Me`)
 3. Timezone (default: `America/Bogota`)
 
-Then it does everything else: copies scripts to `<vault>/⚙️ Meta/scripts/whatsapp/`, installs npm dependencies, generates launchd plists from templates, registers the MCP server in `.mcp.json`, optionally adds a session-start hook, and walks you through the QR pairing.
+Then it does everything else: copies scripts to `<vault>/connectors/whatsapp/` (the standard location for second-brain connectors), installs npm dependencies, generates launchd plists from templates, registers the MCP server in `.mcp.json`, optionally adds a session-start hook, and walks you through the QR pairing.
+
+> **Note on the standard layout.** All connectors for a second-brain vault install under `<vault>/connectors/<name>/`. Operational state (auth keys, logs, runtime files) lives there. Inbox / conversation history lives at `<vault>/⚙️ Meta/whatsapp-inbox/` by default but can be overridden via the `WA_INBOX_PATH` environment variable.
 
 Re-running the installer is safe. It's idempotent and will unload any existing daemon first.
 
@@ -64,10 +66,10 @@ If you ever want to run the diagnostic yourself:
 
 ```bash
 # Read-only diagnostic
-python3 "<vault>/⚙️ Meta/scripts/whatsapp/wa-fix.py" doctor
+python3 "<vault>/connectors/whatsapp/wa-fix.py" doctor
 
 # Diagnose + auto-repair
-python3 "<vault>/⚙️ Meta/scripts/whatsapp/wa-fix.py" fix
+python3 "<vault>/connectors/whatsapp/wa-fix.py" fix
 ```
 
 ## Architecture
@@ -126,7 +128,7 @@ python3 "<vault>/⚙️ Meta/scripts/whatsapp/wa-fix.py" fix
 - `baileys_auth/` contains your WhatsApp Signal Protocol identity and session keys. Treat it as your highest-sensitivity secret. Mode is set to `0700/0600` on install and auto-fixed by `wa-fix` if it drifts.
 - The Unix socket at `/tmp/whatsapp-daemon.sock` is mode `0600`. Only your own user account can talk to the daemon. Still: any process running as your user could send WhatsApp messages in your name. Don't grant shell access on your machine to untrusted parties.
 - Markdown files in `⚙️ Meta/whatsapp-inbox/` contain plaintext message history. If your vault is synced via Dropbox / iCloud / git, you are placing this content with those providers — that's a decision you make, not a property of the connector. The `.gitignore` in this repo excludes `baileys_auth/`, `node_modules/`, logs, and runtime state files, but does not exclude your vault content (which lives outside the repo).
-- For revocation: WhatsApp → Settings → Linked Devices → unlink the daemon entry. That invalidates the keys server-side. Then delete the `baileys_auth/` directory inside `<vault>/⚙️ Meta/scripts/whatsapp/` to remove local state.
+- For revocation: WhatsApp → Settings → Linked Devices → unlink the daemon entry. That invalidates the keys server-side. Then delete the `baileys_auth/` directory inside `<vault>/connectors/whatsapp/` to remove local state.
 
 ## What's inside
 

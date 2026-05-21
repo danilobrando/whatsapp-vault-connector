@@ -30,8 +30,9 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dir = path.dirname(fileURLToPath(import.meta.url))
-const VAULT_ROOT = path.resolve(__dir, '..', '..', '..')
-const WA_INBOX = path.join(VAULT_ROOT, '⚙️ Meta', 'whatsapp-inbox')
+// Standard install path: <vault>/connectors/whatsapp/  (this file lives 2 dirs deep)
+const VAULT_ROOT = process.env.VAULT_ROOT || path.resolve(__dir, '..', '..')
+const WA_INBOX = process.env.WA_INBOX_PATH || path.join(VAULT_ROOT, '⚙️ Meta', 'whatsapp-inbox')
 const SOCKET_PATH = '/tmp/whatsapp-daemon.sock'
 
 // ── Daemon IPC client ────────────────────────────────────────────────────────

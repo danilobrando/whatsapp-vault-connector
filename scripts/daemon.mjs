@@ -32,8 +32,11 @@ import net from 'net'
 import { fileURLToPath } from 'url'
 
 const __dir = path.dirname(fileURLToPath(import.meta.url))
-const VAULT_ROOT = path.resolve(__dir, '..', '..', '..')
-const WA_INBOX = path.join(VAULT_ROOT, '⚙️ Meta', 'whatsapp-inbox')
+// Standard install path: <vault>/connectors/whatsapp/  (this file lives 2 dirs deep)
+const VAULT_ROOT = process.env.VAULT_ROOT || path.resolve(__dir, '..', '..')
+// Inbox can be overridden via env (e.g. for upgrades from legacy installs that
+// kept conversation files under ⚙️ Meta/whatsapp-inbox/).
+const WA_INBOX = process.env.WA_INBOX_PATH || path.join(VAULT_ROOT, '⚙️ Meta', 'whatsapp-inbox')
 const AUTH_DIR = path.join(__dir, 'baileys_auth')
 const STORE_FILE = path.join(__dir, 'baileys_store.json')
 const STATE_FILE = path.join(__dir, '.daemon_state.json')
