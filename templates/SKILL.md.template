@@ -1,0 +1,126 @@
+---
+name: whatsapp-recovery
+description: WhatsApp connector autonomous self-healing layer. The connector (a Baileys daemon at __SCRIPTS_DIR__) sends and receives WhatsApp messages on behalf of the user. This skill is the recovery contract. **AUTO-RECOVERY TRIGGER: when the user reports ANY issue related to WhatsApp, mensajes, contactos, chats, "se queda en procesando", "no le llegan los mensajes", "el WhatsApp no funciona", "no me responden", "no puedo enviar", "está fallando WhatsApp" — this skill MUST be invoked FIRST and the orchestrator MUST silently run `python "__SCRIPTS_DIR__/wa-fix.py" fix` BEFORE responding. Parse the output and either confirm the auto-repair OR walk the user through any manual steps conversationally.** Use also when user says "está raro lo de WhatsApp", "el bot de WhatsApp", "el daemon", "el conector de mensajes". Do NOT use for sending a specific WhatsApp message (use whatsapp_send MCP tool), for searching conversation history (use whatsapp_read_recent or vault search), or for non-WhatsApp messaging (Telegram, Signal, etc.).
+---
+
+# whatsapp-recovery: autonomous self-healing for the WhatsApp connector
+
+The WhatsApp connector is a long-running Baileys daemon (`daemon.mjs`) at `__SCRIPTS_DIR__` that maintains the link with the user's WhatsApp, sends outbound messages via Unix socket IPC, and ingests inbound messages into vault markdown. It runs under launchd (`__LAUNCHD_LABEL_DAEMON__`) plus a watchdog (`__LAUNCHD_LABEL_WATCHDOG__`) that catches hung-but-alive states.
+
+This skill is the **operational recovery layer**: when the user notices something wrong with WhatsApp, the agent silently runs `wa-fix.py`, applies fixes, and either confirms success or walks the user through manual steps.
+
+## AUTO-RECOVERY POLICY (read this first)
+
+**The user does not need to know commands, file paths, daemon, Baileys, or any technical concept. They never type `wa-fix`. They just say their WhatsApp is acting weird, and you handle it.**
+
+### When to auto-trigger
+
+If the user's message contains ANY signal that WhatsApp is misbehaving, your **first action — before any clarifying question — is to run**:
+
+```bash
+python "__SCRIPTS_DIR__/wa-fix.py" fix
+```
+
+Run silently. Do NOT show the user the command. Do NOT explain you're "running diagnostics".
+
+### Trigger phrases (treat broadly)
+
+In Spanish:
+- "el WhatsApp no funciona", "no me funciona el WhatsApp"
+- "se queda en procesando", "los mensajes se quedan procesando"
+- "le mandé y no le llegó", "envié y no lo veo en mi celular"
+- "no puedo enviar mensajes desde Claude", "no me deja enviar"
+- "no responde el bot", "el daemon está fallando"
+- "no veo nuevos mensajes en el vault"
+- "está raro lo de WhatsApp", "algo pasa con WhatsApp"
+- "se desconectó WhatsApp", "perdí WhatsApp"
+
+In English: equivalents (WhatsApp not working, stuck processing, etc.).
+
+When in doubt, run `wa-fix`. It is idempotent and cheap.
+
+### How to interpret `wa-fix fix` output
+
+**Exit 0 + "Nothing to fix. WhatsApp connector is healthy."**
+- Connector itself is sane. Problem may be elsewhere: WhatsApp app on phone, network, recipient's WhatsApp.
+- Ask the user clarifying questions in plain language.
+
+**Exit 0 + "WhatsApp connector healthy. Auto-fixed N issue(s)"**
+- Was broken, now fixed. Mention what was fixed in plain language. Avoid jargon.
+
+**Exit 1 + manual steps**
+- User needs to take action. Translate ONE step at a time. Wait for confirmation between steps. Re-run wa-fix when they finish.
+
+Most common manual case: `session-keys` failing means re-pair is needed. Walk through:
+
+> "Tu sesión con WhatsApp se desincronizó. Vamos a re-vincular tu teléfono en 5 minutos. Te voy a abrir el terminal y te muestro un código QR. En tu teléfono andá a WhatsApp → Configuración → Dispositivos vinculados → Vincular un dispositivo, y escaneás el QR. ¿Listo para empezar?"
+
+### What NOT to do
+
+- Do NOT ask "what command should I run?" — you already know: `wa-fix fix`
+- Do NOT mention "Baileys", "daemon", "launchctl", "messageStore", "Signal Protocol" unless user asks about internals
+- Do NOT tell user to "restart their computer" — wa-fix handles restarts internally
+- Do NOT show raw script output. Translate.
+
+### After successful recovery
+
+Confirm in plain language and offer to redo whatever the user was doing:
+
+> "Listo, el daemon estaba caído y lo arranqué. Ya está conectado. ¿Querés que envíe el mensaje a [contacto] que estabas tratando de mandar?"
+
+### Hard escalation
+
+After wa-fix + manual steps both done and still failing, suggest contacting the technical owner with a concise summary (NOT a log dump).
+
+## Proactive auto-recovery (session-start hook)
+
+Add to `~/.claude/settings.json` (creates the file if missing):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python '__SCRIPTS_DIR__/wa-fix.py' fix --quiet || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+If `~/.claude/settings.json` already exists with other hooks, merge the new one into the array.
+
+## File map of the connector
+
+| Path | Role |
+|---|---|
+| `__SCRIPTS_DIR__/daemon.mjs` | Persistent Baileys connection; IPC server; messageStore |
+| `__SCRIPTS_DIR__/mcp-server.mjs` | MCP server exposing `whatsapp_send`, `whatsapp_search_contacts`, `whatsapp_read_recent`, `whatsapp_daemon_status` |
+| `__SCRIPTS_DIR__/sync.mjs` | One-shot QR pairing + history export (`--groups` to include group chats) |
+| `__SCRIPTS_DIR__/wa-fix.py` | Self-healing: doctor + fix + version |
+| `__SCRIPTS_DIR__/wa-watchdog.sh` | Periodic launchd job (60s) that kills + restarts daemon when heartbeat goes stale |
+| `__SCRIPTS_DIR__/baileys_auth/` | Signal identity + session keys. Treat as highest-sensitivity secret. |
+| `__SCRIPTS_DIR__/.daemon_heartbeat` | Periodic JSON written every 30s |
+| `__SCRIPTS_DIR__/.message_store.json` | Persisted Baileys message store (enables getMessage retry across daemon restarts) |
+| `__SCRIPTS_DIR__/logs/daemon.log` | Pino JSONL daemon log |
+
+## Failure modes that `wa-fix fix` handles
+
+| Failure | Auto-fixable? | Action |
+|---|---|---|
+| Daemon process dead | Yes | launchctl kickstart |
+| Daemon hung (event loop frozen) | Yes | Kill + kickstart |
+| Stale `.daemon.lock` | Yes | Remove lockfile |
+| `baileys_auth/` permissions loose | Yes | chmod 0700/0600 |
+| Missing `logs/` dir | Yes | mkdir |
+| IPC socket dead but daemon running | Yes | kickstart |
+| `launchd` plist missing | No | Print manual install steps |
+| `baileys_auth/` missing (not paired) | No | Print sync.mjs QR steps |
+| Session keys drifted (Bad MAC/PreKeyError) | No | Print re-pair sequence (5 min, requires phone) |
+| Persistent high disconnect rate | No | Print network troubleshooting |

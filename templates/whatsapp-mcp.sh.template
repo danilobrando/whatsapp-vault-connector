@@ -1,0 +1,5 @@
+#!/bin/bash
+# Launcher for the WhatsApp MCP server. Registered in .mcp.json so Claude Code
+# can spawn it on demand for the whatsapp_send / whatsapp_search_contacts /
+# whatsapp_read_recent / whatsapp_daemon_status tools.
+cd "__SCRIPTS_DIR__" && exec node mcp-server.mjs

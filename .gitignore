@@ -1,0 +1,28 @@
+# Runtime state (must never be committed)
+scripts/baileys_auth/
+scripts/baileys_auth_backup_*/
+scripts/baileys_auth_pre_repair_*/
+scripts/baileys_auth_sessions_backup_*/
+scripts/baileys_store.json
+scripts/.daemon_state.json
+scripts/.daemon.lock
+scripts/.daemon_heartbeat
+scripts/.message_store.json
+scripts/.message_store.json.tmp
+scripts/logs/
+scripts/wa-fix.log.jsonl
+
+# Node
+scripts/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp

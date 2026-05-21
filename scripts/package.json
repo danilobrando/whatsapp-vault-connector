@@ -1,0 +1,22 @@
+{
+  "name": "whatsapp-vault-connector",
+  "version": "2.1.0",
+  "description": "Self-healing WhatsApp connector for Obsidian / second-brain vaults. Baileys + MCP + launchd + auto-recovery.",
+  "type": "module",
+  "private": true,
+  "author": {
+    "name": "Danny Bravo",
+    "url": "https://github.com/danilobrando"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danilobrando/whatsapp-vault-connector.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@whiskeysockets/baileys": "^6.7.0",
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
