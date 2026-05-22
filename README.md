@@ -48,6 +48,16 @@ Re-running the installer is safe. It's idempotent and will unload any existing d
 git clone https://github.com/danilobrando/whatsapp-vault-connector ~/whatsapp-vault-connector && bash ~/whatsapp-vault-connector/install.sh
 ```
 
+### Updating an existing install
+
+To pull the latest code without re-pairing or re-exporting history:
+
+```bash
+cd ~/whatsapp-vault-connector && bash update.sh
+```
+
+`update.sh` does a `git pull`, replaces source files and templates, runs `npm install` only when `package-lock.json` changed, restarts the daemon + watchdog, and runs `wa-fix doctor`. State (auth keys, message store, vault inbox) is preserved.
+
 ## Pairing
 
 When the installer reaches step 11, a QR code prints to the terminal. On your phone:
