@@ -217,11 +217,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'whatsapp_list_groups',
-      description: 'List all WhatsApp groups the user is in (from vault conversation files). Use when the user wants to browse groups or you need to disambiguate before sending. Optional query narrows by name.',
+      description: 'List all WhatsApp groups the user is in. By default reads from the vault (fast). If the vault has none matching the query, automatically falls back to a live query against Baileys, which includes brand-new groups that have not yet received messages in this session. Use this when the user wants to browse groups or you need to disambiguate before sending.',
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Optional substring to filter group names.' },
+          source: { type: 'string', enum: ['vault', 'live', 'auto'], description: 'Where to read from. Default "auto" tries vault first then falls back to live.' },
         },
       },
     },
@@ -264,14 +265,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (name === 'whatsapp_list_groups') {
-    const results = searchContacts(args.query || '', { kind: 'group' })
-    if (results.length === 0) {
-      return { content: [{ type: 'text', text: args.query ? `No groups found matching "${args.query}".` : 'No groups found in the vault.' }] }
+    const source = args.source || 'auto'
+    let results = []
+    let usedSource = 'vault'
+
+    if (source !== 'live') {
+      results = searchContacts(args.query || '', { kind: 'group' })
     }
-    // Sort by name for stable browsing
-    results.sort((a, b) => a.name.localeCompare(b.name))
-    const lines = results.map(r => `${r.name} — ${r.jid}`).join('\n')
-    return { content: [{ type: 'text', text: `${results.length} group(s):\n${lines}` }] }
+
+    if ((source === 'live') || (source === 'auto' && results.length === 0)) {
+      // Ask the daemon for the canonical live list from Baileys
+      try {
+        const resp = await sendToDaemon({ cmd: 'list_groups_live', query: args.query || '' })
+        if (resp.ok) {
+          results = resp.groups || []
+          usedSource = 'live'
+        } else if (source === 'live') {
+          return { content: [{ type: 'text', text: `Live group fetch failed: ${resp.error}` }], isError: true }
+        }
+      } catch (err) {
+        if (source === 'live') {
+          return { content: [{ type: 'text', text: err.message }], isError: true }
+        }
+      }
+    }
+
+    if (results.length === 0) {
+      const q = args.query ? ` matching "${args.query}"` : ''
+      return { content: [{ type: 'text', text: `No groups found${q}.` }] }
+    }
+    results.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    const lines = results.map(r => {
+      const size = r.size ? ` (${r.size} members)` : ''
+      return `${r.name || '(unnamed)'} ${size} — ${r.jid}`
+    }).join('\n')
+    return { content: [{ type: 'text', text: `${results.length} group(s) [source: ${usedSource}]:\n${lines}` }] }
   }
 
   if (name === 'whatsapp_read_recent') {

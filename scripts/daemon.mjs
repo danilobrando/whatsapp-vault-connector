@@ -587,6 +587,36 @@ async function handleIPCCommand(raw, conn) {
     return
   }
 
+  if (cmd.cmd === 'list_groups_live') {
+    // Ask Baileys for the canonical list of all groups the user is in.
+    // Useful when a group hasn't yet shown up in the vault (no incoming
+    // message has triggered file creation) but we still need to address it.
+    if (!sock || !connected) {
+      conn.write(JSON.stringify({ ok: false, error: 'WhatsApp not connected' }) + '\n')
+      return
+    }
+    try {
+      const meta = await sock.groupFetchAllParticipating()
+      const q = (cmd.query || '').toLowerCase()
+      const groups = []
+      for (const [jid, g] of Object.entries(meta || {})) {
+        const subject = g.subject || ''
+        if (q && !subject.toLowerCase().includes(q)) continue
+        groups.push({
+          name: subject,
+          jid,
+          kind: 'group',
+          size: (g.participants || []).length,
+        })
+      }
+      groups.sort((a, b) => a.name.localeCompare(b.name))
+      conn.write(JSON.stringify({ ok: true, groups, total: groups.length }) + '\n')
+    } catch (err) {
+      conn.write(JSON.stringify({ ok: false, error: err.message }) + '\n')
+    }
+    return
+  }
+
   conn.write(JSON.stringify({ ok: false, error: `Unknown command: ${cmd.cmd}` }) + '\n')
 }
 
