@@ -1,6 +1,6 @@
 ---
 name: whatsapp-recovery
-description: WhatsApp connector autonomous self-healing layer. The connector (a Baileys daemon at __SCRIPTS_DIR__) sends and receives WhatsApp messages on behalf of the user. This skill is the recovery contract. **AUTO-RECOVERY TRIGGER: when the user reports ANY issue related to WhatsApp, mensajes, contactos, chats, "se queda en procesando", "no le llegan los mensajes", "el WhatsApp no funciona", "no me responden", "no puedo enviar", "está fallando WhatsApp" — this skill MUST be invoked FIRST and the orchestrator MUST silently run `python "__SCRIPTS_DIR__/wa-fix.py" fix` BEFORE responding. Parse the output and either confirm the auto-repair OR walk the user through any manual steps conversationally.** Use also when user says "está raro lo de WhatsApp", "el bot de WhatsApp", "el daemon", "el conector de mensajes". Do NOT use for sending a specific WhatsApp message (use whatsapp_send MCP tool), for searching conversation history (use whatsapp_read_recent or vault search), or for non-WhatsApp messaging (Telegram, Signal, etc.).
+description: WhatsApp connector autonomous self-healing + self-update layer. The connector (a Baileys daemon at __SCRIPTS_DIR__) sends and receives WhatsApp messages on behalf of the user. This skill is the recovery + update contract. **AUTO-RECOVERY TRIGGER: when the user reports ANY issue related to WhatsApp, mensajes, contactos, chats, "se queda en procesando", "no le llegan los mensajes", "el WhatsApp no funciona", "no me responden", "no puedo enviar", "está fallando WhatsApp" — invoke this skill FIRST and silently run `python "__SCRIPTS_DIR__/wa-fix.py" fix` BEFORE responding.** **AUTO-UPDATE TRIGGER: when the user says "actualizá el WhatsApp / el conector / Claude WhatsApp", "trae lo último", "hay update?", "update WhatsApp", "fijate si hay versión nueva", "pull latest", "upgrade WhatsApp connector" — invoke this skill and run `bash ~/whatsapp-vault-connector/update.sh`, then summarize what changed in plain language.** Parse the output and either confirm the auto-repair/update OR walk the user through any manual steps conversationally. Use also when user says "está raro lo de WhatsApp", "el bot de WhatsApp", "el daemon", "el conector de mensajes". Do NOT use for sending a specific WhatsApp message (use whatsapp_send MCP tool), for searching conversation history (use whatsapp_read_recent or vault search), or for non-WhatsApp messaging (Telegram, Signal, etc.).
 ---
 
 # whatsapp-recovery: autonomous self-healing for the WhatsApp connector
@@ -71,6 +71,54 @@ Confirm in plain language and offer to redo whatever the user was doing:
 ### Hard escalation
 
 After wa-fix + manual steps both done and still failing, suggest contacting the technical owner with a concise summary (NOT a log dump).
+
+## AUTO-UPDATE POLICY
+
+When the user asks to update the connector (trigger phrases in the frontmatter), run:
+
+```bash
+bash ~/whatsapp-vault-connector/update.sh
+```
+
+The update script does: `git pull` → stop daemon → copy new source files → npm install only if needed → regenerate plists/launcher/skill from templates → restart daemon → `wa-fix doctor`. State (auth, message store, vault inbox) is preserved.
+
+### How to interpret update.sh output
+
+**"Already on latest commit. Nothing to pull."**
+- Connector is current; no changes were applied.
+- Respond: "Tu conector ya está en la última versión, no hay nada que actualizar."
+
+**`Pulled <oldhash> → <newhash>` followed by commit list**
+- New version applied. Parse the commit subjects to summarize what changed in plain language. Avoid commit hashes and technical jargon when speaking to the user; translate the commit subjects into "what does this mean for them".
+- Example summary: "Actualicé tu conector. Lo nuevo: ahora podés mandar mensajes a grupos por nombre, y hay un comando para listar tus grupos. Probalo cuando quieras."
+
+**Doctor at the end shows FAIL**
+- The update succeeded but the connector landed in a broken state. Run `python "__SCRIPTS_DIR__/wa-fix.py" fix` to auto-repair, then re-run doctor.
+
+### Fallback if local clone is broken
+
+If `update.sh` errors with "not a git repository", "fatal: not a git repository", or the clone directory is missing, the local checkout is broken or was deleted. Re-clone and re-run:
+
+```bash
+rm -rf ~/whatsapp-vault-connector
+git clone https://github.com/danilobrando/whatsapp-vault-connector ~/whatsapp-vault-connector
+bash ~/whatsapp-vault-connector/update.sh
+```
+
+The active install (auth keys, message store, vault inbox files) is in `__SCRIPTS_DIR__`, not in the clone, so wiping the clone is safe.
+
+### What NOT to do during updates
+
+- Do NOT re-pair the user's phone unless `update.sh` doctor explicitly says session keys drifted. Updates do not require re-pairing.
+- Do NOT run `install.sh` for updates; that path is for first-time installs and will run the QR pairing flow + re-export history (slow).
+- Do NOT show commit hashes to the user; translate the commit messages.
+- Do NOT mention "git pull", "launchctl", "plist" — say "actualicé / reinicié el conector" instead.
+
+### After successful update
+
+Confirm what was done + remind the user to restart Claude Code for the MCP server to pick up the new code:
+
+> "Actualicé tu conector a la última versión. Si vas a usar las funciones nuevas de WhatsApp en esta misma sesión de Claude, conviene cerrar y reabrir Claude Code una vez para que tome el código nuevo del MCP server (el daemon ya está corriendo con lo último)."
 
 ## Proactive auto-recovery (session-start hook)
 
