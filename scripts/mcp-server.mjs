@@ -62,22 +62,61 @@ function sendToDaemon(cmd) {
 }
 
 // ── Contact resolution (from vault files) ────────────────────────────────────
+//
+// Conversation files in the vault have one of two frontmatter shapes:
+//   individual:  phone: "+<digits>"      → JID is <digits>@s.whatsapp.net
+//   group:       jid:   "<groupId>"      → JID is <groupId>@g.us
+// Older group files were also written with `phone:` (legacy). WhatsApp group
+// IDs are 17–18 digits; real phone numbers max out around 15. We use length
+// >= 17 as the heuristic to detect group IDs stored under the phone field.
 
-function searchContacts(query) {
+const GROUP_ID_MIN_DIGITS = 17
+
+function toJid(idOrPhone, kind) {
+  if (kind === 'group' || idOrPhone.length >= GROUP_ID_MIN_DIGITS) {
+    return idOrPhone + '@g.us'
+  }
+  return idOrPhone + '@s.whatsapp.net'
+}
+
+function kindFromDigits(digits) {
+  return digits.length >= GROUP_ID_MIN_DIGITS ? 'group' : 'individual'
+}
+
+function searchContacts(query, { kind = 'any' } = {}) {
   const results = []
   const q = query.toLowerCase()
+  if (!fs.existsSync(WA_INBOX)) return results
 
-  if (fs.existsSync(WA_INBOX)) {
-    for (const file of fs.readdirSync(WA_INBOX)) {
-      if (!file.endsWith('.md')) continue
-      const name = file.replace('.md', '').replace(/ \(\d+\)$/, '')
-      if (!name.toLowerCase().includes(q)) continue
+  for (const file of fs.readdirSync(WA_INBOX)) {
+    if (!file.endsWith('.md')) continue
+    const name = file.replace('.md', '').replace(/ \(\d+\)$/, '')
+    if (q && !name.toLowerCase().includes(q)) continue
 
-      const content = fs.readFileSync(path.join(WA_INBOX, file), 'utf8')
-      const phoneMatch = content.match(/phone:\s*"?\+?(\d+)"?/)
-      const phone = phoneMatch ? phoneMatch[1] : null
-      if (phone) {
-        results.push({ name, phone, jid: phone + '@s.whatsapp.net', file })
+    const content = fs.readFileSync(path.join(WA_INBOX, file), 'utf8')
+
+    // Newer convention: explicit `jid:` for groups (e.g. jid: "12036...@g.us" or just digits)
+    const jidMatch = content.match(/jid:\s*"?([^\s"]+)"?/)
+    if (jidMatch) {
+      const raw = jidMatch[1]
+      const fullJid = raw.includes('@') ? raw : raw + '@g.us'
+      const entryKind = fullJid.endsWith('@g.us') ? 'group' : 'individual'
+      if (kind === 'any' || kind === entryKind) {
+        results.push({ name, jid: fullJid, kind: entryKind, file })
+      }
+      continue
+    }
+
+    // Legacy: `phone:` holds either a real phone (individual) or a long group ID
+    const phoneMatch = content.match(/phone:\s*"?\+?(\d+)"?/)
+    if (phoneMatch) {
+      const digits = phoneMatch[1]
+      const entryKind = kindFromDigits(digits)
+      const fullJid = toJid(digits, entryKind)
+      if (kind === 'any' || kind === entryKind) {
+        const entry = { name, jid: fullJid, kind: entryKind, file }
+        if (entryKind === 'individual') entry.phone = digits
+        results.push(entry)
       }
     }
   }
@@ -86,13 +125,33 @@ function searchContacts(query) {
 }
 
 function resolveContact(nameOrPhone) {
-  const clean = nameOrPhone.replace(/[+\-\s]/g, '')
-  if (/^\d{7,}$/.test(clean)) {
-    return { jid: clean + '@s.whatsapp.net', displayName: '+' + clean }
+  const raw = String(nameOrPhone || '').trim()
+  if (!raw) return null
+
+  // 1. Explicit JID passed through (e.g. "12036...@g.us" or "+57...@s.whatsapp.net")
+  if (/@(s\.whatsapp\.net|g\.us|lid|broadcast)$/.test(raw)) {
+    return {
+      jid: raw,
+      displayName: raw.split('@')[0],
+      kind: raw.endsWith('@g.us') ? 'group' : 'individual',
+    }
   }
-  const results = searchContacts(nameOrPhone)
+
+  // 2. All-digits input: distinguish group ID (17+) from phone (<17)
+  const clean = raw.replace(/[+\-\s]/g, '')
+  if (/^\d{7,}$/.test(clean)) {
+    const entryKind = kindFromDigits(clean)
+    return {
+      jid: toJid(clean, entryKind),
+      displayName: entryKind === 'group' ? 'Group ' + clean : '+' + clean,
+      kind: entryKind,
+    }
+  }
+
+  // 3. Search by name across all conversations (individuals + groups)
+  const results = searchContacts(raw)
   if (results.length === 0) return null
-  return { jid: results[0].jid, displayName: results[0].name }
+  return { jid: results[0].jid, displayName: results[0].name, kind: results[0].kind }
 }
 
 // ── Read recent messages from vault ──────────────────────────────────────────
@@ -126,7 +185,7 @@ function readRecent(contactQuery, count = 20) {
 // ── MCP Server ───────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'whatsapp', version: '2.0.0' },
+  { name: 'whatsapp', version: '2.3.0' },
   { capabilities: { tools: {} } }
 )
 
@@ -134,11 +193,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: 'whatsapp_send',
-      description: 'Send a WhatsApp message to a contact. Provide name or phone number.',
+      description: 'Send a WhatsApp message to an individual contact OR a group. Resolution: pass a name (matches contacts and group names), a phone in E.164 (individual), a numeric group ID (17+ digits), or an explicit JID (e.g. "12036...@g.us"). When the user mentions "el grupo X" or "al grupo de Y", this is the tool — pair with whatsapp_list_groups first to confirm the exact group name if ambiguous.',
       inputSchema: {
         type: 'object',
         properties: {
-          to: { type: 'string', description: 'Contact name (e.g. "Alex") or phone number in E.164 format (e.g. "+15551234567")' },
+          to: { type: 'string', description: 'Contact name, group name, phone number (E.164), group ID (17+ digits), or full JID.' },
           message: { type: 'string', description: 'Message text to send' },
         },
         required: ['to', 'message'],
@@ -146,22 +205,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'whatsapp_search_contacts',
-      description: 'Search WhatsApp contacts by name. Returns matches with phone numbers.',
+      description: 'Search WhatsApp conversations by name. Returns both individuals (with phone) and groups (with JID), each tagged kind: "individual" | "group".',
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Name or partial name to search for' },
+          kind: { type: 'string', enum: ['any', 'individual', 'group'], description: 'Filter by conversation kind. Default "any".' },
         },
         required: ['query'],
       },
     },
     {
-      name: 'whatsapp_read_recent',
-      description: 'Read recent messages from a WhatsApp conversation. Messages are synced in real-time by the daemon.',
+      name: 'whatsapp_list_groups',
+      description: 'List all WhatsApp groups the user is in (from vault conversation files). Use when the user wants to browse groups or you need to disambiguate before sending. Optional query narrows by name.',
       inputSchema: {
         type: 'object',
         properties: {
-          contact: { type: 'string', description: 'Contact name to read messages from' },
+          query: { type: 'string', description: 'Optional substring to filter group names.' },
+        },
+      },
+    },
+    {
+      name: 'whatsapp_read_recent',
+      description: 'Read recent messages from a WhatsApp conversation (individual or group). Messages are synced in real-time by the daemon.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          contact: { type: 'string', description: 'Contact or group name to read messages from' },
           count: { type: 'number', description: 'Number of recent messages to return (default: 20)' },
         },
         required: ['contact'],
@@ -179,12 +249,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
 
   if (name === 'whatsapp_search_contacts') {
-    const results = searchContacts(args.query)
+    const results = searchContacts(args.query, { kind: args.kind || 'any' })
     if (results.length === 0) {
-      return { content: [{ type: 'text', text: `No contacts found matching "${args.query}".` }] }
+      return { content: [{ type: 'text', text: `No conversations found matching "${args.query}".` }] }
     }
-    const lines = results.map(r => `${r.name} — ${r.phone} (${r.jid})`).join('\n')
-    return { content: [{ type: 'text', text: `Found ${results.length} contact(s):\n${lines}` }] }
+    const lines = results.map(r => {
+      const tag = r.kind === 'group' ? '[group]' : '[individual]'
+      const id = r.phone ? `+${r.phone}` : r.jid
+      return `${tag} ${r.name} — ${id} (jid: ${r.jid})`
+    }).join('\n')
+    const ind = results.filter(r => r.kind === 'individual').length
+    const grp = results.filter(r => r.kind === 'group').length
+    return { content: [{ type: 'text', text: `Found ${results.length} match(es): ${ind} individual, ${grp} group.\n${lines}` }] }
+  }
+
+  if (name === 'whatsapp_list_groups') {
+    const results = searchContacts(args.query || '', { kind: 'group' })
+    if (results.length === 0) {
+      return { content: [{ type: 'text', text: args.query ? `No groups found matching "${args.query}".` : 'No groups found in the vault.' }] }
+    }
+    // Sort by name for stable browsing
+    results.sort((a, b) => a.name.localeCompare(b.name))
+    const lines = results.map(r => `${r.name} — ${r.jid}`).join('\n')
+    return { content: [{ type: 'text', text: `${results.length} group(s):\n${lines}` }] }
   }
 
   if (name === 'whatsapp_read_recent') {
@@ -204,14 +291,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const resolved = resolveContact(args.to)
     if (!resolved) {
       return {
-        content: [{ type: 'text', text: `Contact "${args.to}" not found. Use whatsapp_search_contacts to find the right name.` }],
+        content: [{ type: 'text', text: `No contact or group found for "${args.to}". Use whatsapp_search_contacts or whatsapp_list_groups to find the right name.` }],
         isError: true,
       }
     }
     try {
       const resp = await sendToDaemon({ cmd: 'send', jid: resolved.jid, text: args.message })
       if (resp.ok) {
-        return { content: [{ type: 'text', text: `Message sent to ${resolved.displayName} (${resolved.jid})` }] }
+        const tag = resolved.kind === 'group' ? 'group' : 'contact'
+        return { content: [{ type: 'text', text: `Message sent to ${tag} ${resolved.displayName} (${resolved.jid})` }] }
       }
       return { content: [{ type: 'text', text: `Send failed: ${resp.error}` }], isError: true }
     } catch (err) {

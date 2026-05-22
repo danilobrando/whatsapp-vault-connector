@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-vault-connector",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Self-healing WhatsApp connector for Obsidian / second-brain vaults. Baileys + MCP + launchd + auto-recovery.",
   "type": "module",
   "private": true,

@@ -390,6 +390,24 @@ function releaseLock() {
 }
 
 // ── Contact search (for IPC send) ───────────────────────────────────────────
+//
+// Recognizes both individuals (phone <17 digits → @s.whatsapp.net) and groups
+// (jid: field or phone field ≥17 digits → @g.us). See mcp-server.mjs for the
+// same convention; kept duplicated here so the daemon doesn't depend on the
+// MCP layer.
+
+const GROUP_ID_MIN_DIGITS = 17
+
+function _kindFromDigits(digits) {
+  return digits.length >= GROUP_ID_MIN_DIGITS ? 'group' : 'individual'
+}
+
+function _toJid(idOrPhone, kind) {
+  if (kind === 'group' || idOrPhone.length >= GROUP_ID_MIN_DIGITS) {
+    return idOrPhone + '@g.us'
+  }
+  return idOrPhone + '@s.whatsapp.net'
+}
 
 function searchContacts(query) {
   const results = []
@@ -401,18 +419,36 @@ function searchContacts(query) {
       const name = file.replace('.md', '').replace(/ \(\d+\)$/, '')
       if (!name.toLowerCase().includes(q)) continue
       const content = fs.readFileSync(path.join(WA_INBOX, file), 'utf8')
+
+      const jidMatch = content.match(/jid:\s*"?([^\s"]+)"?/)
+      if (jidMatch) {
+        const raw = jidMatch[1]
+        const fullJid = raw.includes('@') ? raw : raw + '@g.us'
+        const kind = fullJid.endsWith('@g.us') ? 'group' : 'individual'
+        results.push({ name, jid: fullJid, kind })
+        continue
+      }
+
       const phoneMatch = content.match(/phone:\s*"?\+?(\d+)"?/)
       if (phoneMatch) {
-        results.push({ name, phone: phoneMatch[1], jid: phoneMatch[1] + '@s.whatsapp.net' })
+        const digits = phoneMatch[1]
+        const kind = _kindFromDigits(digits)
+        const entry = { name, jid: _toJid(digits, kind), kind }
+        if (kind === 'individual') entry.phone = digits
+        results.push(entry)
       }
     }
   }
 
+  // Also fold in raw Baileys contact-store entries (live names from WhatsApp)
   for (const [jid, c] of Object.entries(contacts)) {
     const name = c.name || c.notify || ''
     if (name.toLowerCase().includes(q)) {
       if (!results.find(r => r.jid === jid)) {
-        results.push({ name, phone: jid.split('@')[0], jid })
+        const kind = jid.endsWith('@g.us') ? 'group' : 'individual'
+        const entry = { name, jid, kind }
+        if (kind === 'individual') entry.phone = jid.split('@')[0]
+        results.push(entry)
       }
     }
   }
@@ -421,13 +457,32 @@ function searchContacts(query) {
 }
 
 function resolveContact(nameOrPhone) {
-  const clean = nameOrPhone.replace(/[+\-\s]/g, '')
-  if (/^\d{7,}$/.test(clean)) {
-    return { jid: clean + '@s.whatsapp.net', displayName: '+' + clean }
+  const raw = String(nameOrPhone || '').trim()
+  if (!raw) return null
+
+  // Explicit JID
+  if (/@(s\.whatsapp\.net|g\.us|lid|broadcast)$/.test(raw)) {
+    return {
+      jid: raw,
+      displayName: raw.split('@')[0],
+      kind: raw.endsWith('@g.us') ? 'group' : 'individual',
+    }
   }
-  const results = searchContacts(nameOrPhone)
+
+  // All-digits: distinguish phone vs group ID by length
+  const clean = raw.replace(/[+\-\s]/g, '')
+  if (/^\d{7,}$/.test(clean)) {
+    const kind = _kindFromDigits(clean)
+    return {
+      jid: _toJid(clean, kind),
+      displayName: kind === 'group' ? 'Group ' + clean : '+' + clean,
+      kind,
+    }
+  }
+
+  const results = searchContacts(raw)
   if (results.length === 0) return null
-  return { jid: results[0].jid, displayName: results[0].name }
+  return { jid: results[0].jid, displayName: results[0].name, kind: results[0].kind }
 }
 
 // ── Unix socket IPC server ───────────────────────────────────────────────────
@@ -485,10 +540,14 @@ async function handleIPCCommand(raw, conn) {
       return
     }
     const resolved = cmd.jid
-      ? { jid: cmd.jid, displayName: cmd.jid }
+      ? {
+          jid: cmd.jid,
+          displayName: cmd.jid,
+          kind: cmd.jid.endsWith('@g.us') ? 'group' : 'individual',
+        }
       : resolveContact(cmd.to)
     if (!resolved) {
-      conn.write(JSON.stringify({ ok: false, error: `Contact "${cmd.to}" not found` }) + '\n')
+      conn.write(JSON.stringify({ ok: false, error: `Contact or group "${cmd.to}" not found` }) + '\n')
       return
     }
     try {
@@ -515,7 +574,7 @@ async function handleIPCCommand(raw, conn) {
       } catch (appendErr) {
         logger.error({ err: appendErr, jid: resolved.jid }, 'Failed to append outbound message')
       }
-      conn.write(JSON.stringify({ ok: true, jid: resolved.jid, displayName: resolved.displayName, msgId: sentMsg?.key?.id }) + '\n')
+      conn.write(JSON.stringify({ ok: true, jid: resolved.jid, displayName: resolved.displayName, kind: resolved.kind, msgId: sentMsg?.key?.id }) + '\n')
     } catch (err) {
       conn.write(JSON.stringify({ ok: false, error: err.message }) + '\n')
     }
