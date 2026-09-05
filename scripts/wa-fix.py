@@ -738,6 +738,14 @@ def run_checks() -> list[CheckResult]:
                 "Re-pair to reset the Signal sessions:",
                 f"    python3 '{Path(__file__).resolve()}' repair",
             ]))
+    elif dstate == "UNSTABLE":
+        # Reconnect churn with no evidence that messages are failing. Worth
+        # seeing, not worth alarming on, and explicitly NOT a reason to block
+        # sends — that was the old behaviour and it punished flaky networks.
+        results.append(CheckResult(
+            WARN, "daemon-state",
+            f"state: UNSTABLE — {recon} reconnects in the last 5 minutes, but nothing "
+            f"indicates messages are failing. Usually a flaky network. Sends still work."))
     elif dstate != "CONNECTED":
         results.append(CheckResult(WARN, "daemon-state",
                                    f"state: {dstate} (reconnects={recon}, sends={sends})"))

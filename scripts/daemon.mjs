@@ -215,6 +215,7 @@ const DAEMON_STATE = {
   STARTING: 'STARTING',
   CONNECTED: 'CONNECTED',
   RECONNECTING: 'RECONNECTING',
+  UNSTABLE: 'UNSTABLE',
   DRIFT_DETECTED: 'DRIFT_DETECTED',
 }
 let daemonState = DAEMON_STATE.STARTING
@@ -225,6 +226,22 @@ let daemonState = DAEMON_STATE.STARTING
 // it can connect but encrypted payloads aren't decoding on the peer side.
 const DRIFT_WINDOW_MS = 5 * 60 * 1000  // 5 minutes
 const DRIFT_RECONNECT_THRESHOLD = 4
+
+// Evidence thresholds for declaring the Signal session actually broken.
+//
+// The original rule was "many reconnects AND zero successful sends". That
+// invariant is false: zero successful sends usually means nobody tried to send
+// anything, not that sending is broken. Observed 2026-09-05 — five reconnects
+// from transient network timeouts (codes 408/405) with nobody sending put the
+// daemon into DRIFT_DETECTED and made it refuse outbound, while reception was
+// demonstrably fine (447 inbound from 29 contacts that day).
+//
+// Drift now requires POSITIVE evidence that messages are not getting through:
+// undecryptable messages piling up, or a long silence while connected. Reconnect
+// churn on its own is instability, which is worth surfacing but must not block
+// sends.
+const DRIFT_DECRYPT_1H = 30              // matches wa-fix.py's FAIL threshold
+const DRIFT_SILENCE_MS = 18 * 60 * 60 * 1000  // matches the inbound-freshness alarm
 const recentReconnects = []  // array of unix ms timestamps
 const recentSuccessfulSends = []  // array of unix ms timestamps
 
@@ -239,18 +256,32 @@ function _recomputeDaemonState(reason) {
   _trimWindow(recentReconnects, now)
   _trimWindow(recentSuccessfulSends, now)
 
+  // Positive evidence that the Signal session is broken, in order of how fast
+  // it becomes conclusive.
+  const decrypt1h = countSince(decryptFailRing, 60 * 60 * 1000)
+  const inboundAge = lastInboundRealAt
+    ? now - new Date(lastInboundRealAt).getTime()
+    : null
+  // Only trust the silence signal once a full window has actually been observed;
+  // a freshly started daemon has no inbound history and must not read as broken.
+  const windowObserved = Boolean(signalSince && (now - new Date(signalSince).getTime()) >= RING_WINDOW_MS)
+  const driftEvidence =
+    decrypt1h >= DRIFT_DECRYPT_1H ? `decryptFail1h=${decrypt1h}`
+    : (windowObserved && inboundAge !== null && inboundAge >= DRIFT_SILENCE_MS)
+      ? `no real inbound for ${Math.round(inboundAge / 3600000)}h`
+      : null
+
   let next = daemonState
   if (!connected) {
     next = DAEMON_STATE.RECONNECTING
+  } else if (driftEvidence) {
+    next = DAEMON_STATE.DRIFT_DETECTED
+  } else if (recentReconnects.length >= DRIFT_RECONNECT_THRESHOLD) {
+    // Churning, but nothing proves messages are failing. Surfaced, not blocking:
+    // refusing sends here would punish the user for a flaky network.
+    next = DAEMON_STATE.UNSTABLE
   } else {
-    // Connected. Drift only flags when we've reconnected a lot AND haven't
-    // managed to actually send anything successfully through the new sessions.
-    if (recentReconnects.length >= DRIFT_RECONNECT_THRESHOLD &&
-        recentSuccessfulSends.length === 0) {
-      next = DAEMON_STATE.DRIFT_DETECTED
-    } else {
-      next = DAEMON_STATE.CONNECTED
-    }
+    next = DAEMON_STATE.CONNECTED
   }
 
   if (next !== prev) {
@@ -259,6 +290,8 @@ function _recomputeDaemonState(reason) {
       from: prev, to: next, reason,
       reconnectsInWindow: recentReconnects.length,
       successfulSendsInWindow: recentSuccessfulSends.length,
+      decryptFail1h: decrypt1h,
+      driftEvidence,
     }, 'Daemon state transition')
   }
 }
@@ -792,7 +825,9 @@ async function handleIPCCommand(raw, conn) {
     if (daemonState === DAEMON_STATE.DRIFT_DETECTED) {
       conn.write(JSON.stringify({
         ok: false,
-        error: 'Daemon in DRIFT_DETECTED state. Sends would silently fail on the recipient. ' +
+        error: 'Daemon in DRIFT_DETECTED state: there is positive evidence messages are not '
+             + 'getting through (undecryptable messages piling up, or a long inbound silence), '
+             + 'so a send would land in "waiting for this message" on the recipient. ' +
                'Run `python3 wa-fix.py repair` to re-pair and reset Signal sessions.',
         state: daemonState,
       }) + '\n')

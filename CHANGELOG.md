@@ -2,6 +2,25 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) · Versionado: [SemVer](https://semver.org/lang/es/)
 
+## [2.8.1] — 2026-09-05
+
+### Corregido
+- **`DRIFT_DETECTED` dejaba de enviar por culpa de una red inestable.** La regla era
+  «muchas reconexiones **Y** cero envíos exitosos», y ese invariante es falso: cero
+  envíos exitosos casi siempre significa que **nadie intentó enviar**, no que enviar
+  esté roto. Observado el 5-sep: cinco reconexiones por timeouts de red (códigos
+  408/405), nadie enviando, y el daemon se puso a rechazar salientes mientras la
+  recepción funcionaba perfectamente (447 entrantes de 29 contactos ese día).
+
+  La deriva ahora exige **evidencia positiva** de que los mensajes no pasan:
+  `decryptFail1h >= 30`, o silencio de entrada de 18h o más con la ventana de 24h
+  ya observada. Es la misma clase de error que motivó todo el trabajo de
+  observabilidad de la v2.5.0 — confundir ausencia de evidencia con evidencia de
+  fallo — y había sobrevivido dentro de la propia máquina de estados.
+- **Estado `UNSTABLE` nuevo** para el caso de muchas reconexiones sin evidencia de
+  fallo. Se reporta (WARN en el doctor) pero **no bloquea envíos**: castigar al
+  usuario por una red con hipo no arregla nada.
+
 ## [2.8.0] — 2026-09-05
 
 Hallazgos de la revisión de productización de 3 expertos (Adam Wiggins, Mitchell
