@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LAUNCHD_LABEL_WATCHDOG__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__SCRIPTS_DIR__/wa-watchdog.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>WHATSAPP_DAEMON_LABEL</key>
+    <string>__LAUNCHD_LABEL_DAEMON__</string>
+    <!-- Where outage alerts go. launchd jobs do NOT inherit your shell
+         environment, so setting ALERT_EMAIL in .zshrc has no effect here —
+         it has to live in this plist. Empty means the only alert is a local
+         macOS notification, and `wa-fix.py doctor` will flag that. -->
+    <key>ALERT_EMAIL</key>
+    <string>__ALERT_EMAIL__</string>
+    <key>WA_ALERT_COMMAND</key>
+    <string>__ALERT_COMMAND__</string>
+    <key>WA_MAIL_SENDER</key>
+    <string>__MAIL_SENDER__</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__SCRIPTS_DIR__/logs/watchdog-stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__SCRIPTS_DIR__/logs/watchdog-stderr.log</string>
+</dict>
+</plist>

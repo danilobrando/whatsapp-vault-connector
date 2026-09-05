@@ -1,0 +1,12 @@
+#!/bin/bash
+# Launcher for the WhatsApp MCP server. Registered in .mcp.json so Claude Code
+# can spawn it on demand for the whatsapp_send / whatsapp_search_contacts /
+# whatsapp_read_recent / whatsapp_daemon_status tools.
+#
+# Claude Code spawns this with a bare environment, so the connector's settings
+# have to be baked in here. Without WA_INBOX_SUFFIX the MCP server strips the
+# wrong suffix from filenames and resolves contacts to the wrong names.
+export WA_INBOX_SUFFIX="__INBOX_SUFFIX__"
+export WA_SENDER_NAME="__SENDER_NAME__"
+export WA_TZ="__TZ__"
+cd "__SCRIPTS_DIR__" && exec node mcp-server.mjs

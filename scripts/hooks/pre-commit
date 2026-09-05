@@ -1,0 +1,47 @@
+#!/bin/bash
+# whatsapp-vault-connector — PII guard
+# Copyright (c) 2026 Danny Bravo · MIT
+#
+# Blocks commits that contain real WhatsApp identifiers. This repo shipped
+# real third-party phone numbers in every commit of its first history
+# (2026-05-21 → 2026-09-05); this hook exists so that cannot recur.
+#
+# Install:  ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+set -u
+
+# Placeholders that are explicitly allowed in examples/docs.
+ALLOW='15551234567|120363000000000000|0{6,}'
+
+# Real-looking WhatsApp JIDs and bare international numbers.
+PATTERN='[0-9]{10,20}@(s\.whatsapp\.net|lid|g\.us)|\+[0-9]{11,15}\b'
+
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+[ -z "$staged" ] && exit 0
+
+hits=""
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  # Only inspect text files.
+  file "$f" | grep -qiE 'text|json|script' || continue
+  found="$(git show ":$f" 2>/dev/null | grep -nE "$PATTERN" | grep -vE "$ALLOW" || true)"
+  [ -n "$found" ] && hits="${hits}
+── $f
+$(echo "$found" | sed 's/^/     /')"
+done <<< "$staged"
+
+if [ -n "$hits" ]; then
+  cat >&2 <<EOF
+✗ COMMIT BLOQUEADO — identificador de WhatsApp real detectado
+$hits
+
+Este repo es de código público. Un número real aquí es PII de un tercero
+que no consintió, y queda en la historia para siempre.
+
+Usa marcadores: 15551234567@s.whatsapp.net · 120363000000000000@g.us
+
+Si de verdad es un marcador nuevo, agrégalo a ALLOW en scripts/hooks/pre-commit.
+Para saltar el freno (no lo hagas): git commit --no-verify
+EOF
+  exit 1
+fi
+exit 0

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/danilobrando/whatsapp-vault-connector/security/advisories/new
+    about: Anything involving credentials, key material, or your vault contents. Please do not file it publicly.
+  - name: My WhatsApp account got banned
+    url: https://github.com/danilobrando/whatsapp-vault-connector#read-this-before-you-install
+    about: This is the documented risk of using an unofficial WhatsApp client. There is nothing this project can do about it.
