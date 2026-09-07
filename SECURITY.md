@@ -55,6 +55,11 @@ A label is not proof: anything can claim to be the MCP server. It is a trail,
 not a gate. If you need a gate, do not give shell access on this machine to
 anyone you would not hand your phone to.
 
+The trail rotates at 5 MB into dated archives and is pruned after 90 days
+(`WA_AUDIT_MAX_BYTES`, `WA_AUDIT_RETENTION_DAYS`). Pruning is itself recorded in
+the live trail — an audit log that silently loses entries is indistinguishable
+from one that was tampered with.
+
 **No message content is recoverable from the audit log**, by design. If you need
 to know what was said, that is the vault.
 

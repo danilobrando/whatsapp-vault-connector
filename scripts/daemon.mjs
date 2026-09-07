@@ -59,6 +59,17 @@ const LOCK_FILE = path.join(__dir, '.daemon.lock')
 // process on the machine can reach a socket there. A private run directory
 // under the connector is the containment boundary.
 const AUDIT_FILE = path.join(__dir, 'audit.jsonl')
+// Audit retention. The trail is append-only and grows one line per send, so it
+// needs a policy or it becomes an unbounded file of send metadata that nobody
+// ever prunes — which is a privacy problem, not just a disk one.
+//
+// Rotation is by size, retention by age: forensic value here is time-based
+// ("who sent what last quarter"), not volume-based. Archives are dated rather
+// than a single .1 that each cycle destroys, because an incident can be older
+// than one rotation — that mistake already cost this project its forensic
+// window once, in the daemon log.
+const AUDIT_MAX_BYTES = Number(process.env.WA_AUDIT_MAX_BYTES || 5 * 1024 * 1024)
+const AUDIT_RETENTION_DAYS = Number(process.env.WA_AUDIT_RETENTION_DAYS || 90)
 const RUN_DIR = path.join(__dir, '.run')
 const SOCKET_PATH = process.env.WA_SOCKET_PATH || path.join(RUN_DIR, 'daemon.sock')
 const LEGACY_SOCKET_PATH = '/tmp/whatsapp-daemon.sock'
@@ -1292,6 +1303,41 @@ function startPeriodicTasks() {
       successfulSendsInWindow: recentSuccessfulSends.length,
     }), () => { /* best-effort, errors ignored */ })
   }, HEARTBEAT_INTERVAL_MS)
+
+  // Audit rotation + retention, hourly.
+  setInterval(() => {
+    try {
+      if (!fs.existsSync(AUDIT_FILE)) return
+      // Safe to rename: audit lines are written with appendFileSync, which opens
+      // and closes per call, so no descriptor is left pointing at the old inode.
+      // (The daemon log needs copy-truncate for exactly the opposite reason.)
+      if (fs.statSync(AUDIT_FILE).size > AUDIT_MAX_BYTES) {
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+        fs.renameSync(AUDIT_FILE, path.join(__dir, `audit-${stamp}.jsonl`))
+        audit('audit.rotated', { archived: `audit-${stamp}.jsonl` })
+      }
+
+      // Prune archives past the retention window. The deletion is itself
+      // recorded in the live trail: an audit log that silently loses entries is
+      // indistinguishable from one that was tampered with.
+      const cutoff = Date.now() - AUDIT_RETENTION_DAYS * 86400000
+      const expired = fs.readdirSync(__dir)
+        .filter(f => /^audit-\d{8}\d{6}\.jsonl$/.test(f))
+        .filter(f => {
+          try { return fs.statSync(path.join(__dir, f)).mtimeMs < cutoff } catch { return false }
+        })
+      for (const f of expired) {
+        try { fs.unlinkSync(path.join(__dir, f)) } catch { continue }
+      }
+      if (expired.length) {
+        audit('audit.pruned', { removed: expired, retentionDays: AUDIT_RETENTION_DAYS })
+      }
+    } catch (err) {
+      logger.error({ err }, 'Audit rotation failed')
+    }
+    // Interval is configurable so the policy can actually be exercised in a
+    // test instead of being taken on faith for an hour at a time.
+  }, Number(process.env.WA_AUDIT_ROTATE_MS || 60 * 60 * 1000))
 
   // Rotate log if > 10MB
   setInterval(() => {

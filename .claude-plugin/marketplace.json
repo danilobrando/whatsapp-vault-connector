@@ -9,7 +9,7 @@
       "name": "whatsapp-vault-connector",
       "source": "./",
       "description": "WhatsApp in your Obsidian vault, readable and sendable from Claude Code \u2014 with a health layer that catches a dead connector in hours instead of weeks.",
-      "version": "2.10.0"
+      "version": "2.10.1"
     }
   ]
 }

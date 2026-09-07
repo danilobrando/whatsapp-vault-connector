@@ -5,6 +5,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [2.10.1] — 2026-09-07
+
+### Added
+- **Audit retention.** `audit.jsonl` grew one line per send with no policy — an
+  unbounded file of send metadata that nobody would ever prune, which is a
+  privacy problem before it is a disk one. It now rotates at 5 MB into dated
+  archives and prunes them after 90 days (`WA_AUDIT_MAX_BYTES`,
+  `WA_AUDIT_RETENTION_DAYS`).
+
+  Rotation is by size, retention by age: forensic value here is time-based, not
+  volume-based. Archives are dated rather than a single `.1` destroyed each
+  cycle — that mistake already cost this project its forensic window once, in
+  the daemon log. **Pruning is recorded in the live trail**, because an audit
+  log that silently loses entries is indistinguishable from a tampered one.
+- `WA_AUDIT_ROTATE_MS` makes the interval configurable, so the policy can be
+  exercised in a test instead of taken on faith for an hour at a time.
+
 ## [2.10.0] — 2026-09-07
 
 The three security gaps `SECURITY.md` had been declaring. Two are closed; the
