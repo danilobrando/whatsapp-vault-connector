@@ -14,7 +14,8 @@
 #  4. Runs `npm install` for Baileys dependencies.
 #  5. Installs the launchd plists (daemon + watchdog) into ~/Library/LaunchAgents.
 #  6. Installs the MCP launcher into ~/.claude/whatsapp-mcp.sh.
-#  7. Installs the whatsapp-recovery skill into ~/.claude/skills/.
+#  7. Installs the whatsapp-recovery skill into ~/.claude/skills/ — unless the
+#     Claude Code plugin already provides one, in which case that copy wins.
 #  8. Registers the MCP server in .mcp.json (vault-local or global).
 #  9. Optionally adds the session-start hook to ~/.claude/settings.json.
 # 10. Starts QR pairing (you scan with your phone).
@@ -215,9 +216,61 @@ chmod +x "$HOME/.claude/whatsapp-mcp.sh"
 ok "MCP launcher at ~/.claude/whatsapp-mcp.sh"
 
 bold "Step 8/12: Installing whatsapp-recovery skill"
-mkdir -p "$HOME/.claude/skills/whatsapp-recovery"
-substitute "$PKG_DIR/templates/SKILL.md.template" "$HOME/.claude/skills/whatsapp-recovery/SKILL.md"
-ok "Skill at ~/.claude/skills/whatsapp-recovery/"
+# If this connector was installed as a Claude Code plugin, that plugin already
+# ships an equivalent skill (`whatsapp-connector`). Installing a second one into
+# ~/.claude/skills/ would give the agent two overlapping sets of instructions for
+# the same connector — they would not conflict outright, but the agent has to
+# pick one, and one of them goes stale the moment the plugin updates. The plugin
+# is the maintained copy, so it wins.
+PLUGIN_SKILL=""
+if [ -f "$HOME/.claude/plugins/installed_plugins.json" ]; then
+  PLUGIN_SKILL="$(python3 - <<'PYEOF' 2>/dev/null || true
+import json, os, glob, pathlib
+
+home = pathlib.Path(os.path.expanduser("~"))
+reg = home / ".claude" / "plugins" / "installed_plugins.json"
+rel = pathlib.Path("skills") / "whatsapp-connector" / "SKILL.md"
+
+# Preferred: the registry, which records where each install actually landed.
+try:
+    data = json.loads(reg.read_text(encoding="utf-8"))
+    for key, entries in (data.get("plugins") or {}).items():
+        if not key.startswith("whatsapp-vault-connector@"):
+            continue
+        for e in entries if isinstance(entries, list) else [entries]:
+            cand = pathlib.Path(e.get("installPath", "")) / rel
+            if cand.is_file():
+                print(cand)
+                raise SystemExit(0)
+except (OSError, ValueError, KeyError):
+    pass
+
+# Fallback: the plugin cache, in case the registry format moves under us.
+for cand in glob.glob(str(home / ".claude/plugins/cache/*/whatsapp-vault-connector/*" / rel)):
+    if os.path.isfile(cand):
+        print(cand)
+        break
+PYEOF
+)"
+fi
+
+if [ -n "$PLUGIN_SKILL" ] && [ -z "${WA_FORCE_SKILL:-}" ]; then
+  ok "Claude Code plugin already provides the skill — not installing a second copy."
+  say "  Using: $PLUGIN_SKILL"
+  say "  It updates with the plugin. Override with WA_FORCE_SKILL=1 if you want a"
+  say "  standalone copy in ~/.claude/skills/ as well."
+  # A stale hand-installed skill from a pre-plugin install would keep competing
+  # with the plugin's, so retire it rather than leaving it to rot.
+  if [ -f "$HOME/.claude/skills/whatsapp-recovery/SKILL.md" ]; then
+    mv "$HOME/.claude/skills/whatsapp-recovery/SKILL.md" \
+       "$HOME/.claude/skills/whatsapp-recovery/SKILL.md.superseded-by-plugin" 2>/dev/null \
+      && warn "Retired the older standalone skill (kept as SKILL.md.superseded-by-plugin)."
+  fi
+else
+  mkdir -p "$HOME/.claude/skills/whatsapp-recovery"
+  substitute "$PKG_DIR/templates/SKILL.md.template" "$HOME/.claude/skills/whatsapp-recovery/SKILL.md"
+  ok "Skill at ~/.claude/skills/whatsapp-recovery/"
+fi
 
 # ── Register MCP in .mcp.json ────────────────────────────────────────────────
 

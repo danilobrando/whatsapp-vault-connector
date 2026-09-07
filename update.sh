@@ -163,14 +163,60 @@ with open(out, 'w', encoding='utf-8') as f:
 PYEOF
 }
 
-bold "Step 5/7: Regenerating launchd plists + MCP launcher + skill from templates"
+# If this connector was installed as a Claude Code plugin, that plugin already
+# ships an equivalent skill (`whatsapp-connector`). Installing a second one into
+# ~/.claude/skills/ would give the agent two overlapping sets of instructions for
+# the same connector — they would not conflict outright, but the agent has to
+# pick one, and one of them goes stale the moment the plugin updates. The plugin
+# is the maintained copy, so it wins.
+PLUGIN_SKILL=""
+if [ -f "$HOME/.claude/plugins/installed_plugins.json" ]; then
+  PLUGIN_SKILL="$(python3 - <<'PYEOF' 2>/dev/null || true
+import json, os, glob, pathlib
+
+home = pathlib.Path(os.path.expanduser("~"))
+reg = home / ".claude" / "plugins" / "installed_plugins.json"
+rel = pathlib.Path("skills") / "whatsapp-connector" / "SKILL.md"
+
+# Preferred: the registry, which records where each install actually landed.
+try:
+    data = json.loads(reg.read_text(encoding="utf-8"))
+    for key, entries in (data.get("plugins") or {}).items():
+        if not key.startswith("whatsapp-vault-connector@"):
+            continue
+        for e in entries if isinstance(entries, list) else [entries]:
+            cand = pathlib.Path(e.get("installPath", "")) / rel
+            if cand.is_file():
+                print(cand)
+                raise SystemExit(0)
+except (OSError, ValueError, KeyError):
+    pass
+
+# Fallback: the plugin cache, in case the registry format moves under us.
+for cand in glob.glob(str(home / ".claude/plugins/cache/*/whatsapp-vault-connector/*" / rel)):
+    if os.path.isfile(cand):
+        print(cand)
+        break
+PYEOF
+)"
+fi
+
+bold "Step 5/7: Regenerating launchd plists + MCP launcher from templates"
 substitute "$PKG_DIR/templates/whatsapp-daemon.plist.template" "$DAEMON_PLIST"
 substitute "$PKG_DIR/templates/whatsapp-watchdog.plist.template" "$HOME/Library/LaunchAgents/${LAUNCHD_LABEL_WATCHDOG}.plist"
 substitute "$PKG_DIR/templates/whatsapp-mcp.sh.template" "$HOME/.claude/whatsapp-mcp.sh"
 chmod +x "$HOME/.claude/whatsapp-mcp.sh"
-mkdir -p "$HOME/.claude/skills/whatsapp-recovery"
-substitute "$PKG_DIR/templates/SKILL.md.template" "$HOME/.claude/skills/whatsapp-recovery/SKILL.md"
-ok "Templates regenerated."
+
+# Only the skill is conditional. The plists and the MCP launcher must be
+# regenerated either way — they carry this install's paths and settings, and
+# the plugin does not provide them.
+if [ -n "$PLUGIN_SKILL" ] && [ -z "${WA_FORCE_SKILL:-}" ]; then
+  ok "Templates regenerated. Skill comes from the Claude Code plugin; leaving ~/.claude/skills/ alone."
+else
+  mkdir -p "$HOME/.claude/skills/whatsapp-recovery"
+  substitute "$PKG_DIR/templates/SKILL.md.template" "$HOME/.claude/skills/whatsapp-recovery/SKILL.md"
+  ok "Templates regenerated."
+fi
 
 # ── Reload launchd jobs ─────────────────────────────────────────────────────
 

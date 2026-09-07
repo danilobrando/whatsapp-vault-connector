@@ -149,6 +149,13 @@ through pairing.
 Re-running the installer is safe. It is idempotent and unloads any running
 daemon first.
 
+**The two paths do not collide.** If the Claude Code plugin is installed,
+`install.sh` and `update.sh` detect it and do **not** write a second skill into
+`~/.claude/skills/` — the plugin's copy is the maintained one and updates with
+the plugin. A skill left over from a pre-plugin install is retired to
+`SKILL.md.superseded-by-plugin` rather than left to compete. Set
+`WA_FORCE_SKILL=1` if you want a standalone copy anyway.
+
 ### Updating
 
 ```bash
@@ -320,6 +327,9 @@ rm ~/Library/LaunchAgents/${WATCHDOG_LABEL}.plist
 rm ~/.claude/whatsapp-mcp.sh
 rm -rf ~/.claude/skills/whatsapp-recovery
 
+# If you installed via the plugin, remove it from Claude Code as well:
+#   /plugin uninstall whatsapp-vault-connector
+#
 # Remove the "whatsapp" entry from .mcp.json manually (or with jq)
 
 # Vault scripts dir and inbox can stay (they're your conversation history)

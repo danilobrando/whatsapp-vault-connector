@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [2.9.1] — 2026-09-07
+
+### Changed
+- **`install.sh` and `update.sh` detect the Claude Code plugin** and no longer
+  write a second skill into `~/.claude/skills/`. Two overlapping sets of
+  instructions for the same connector do not conflict outright, but the agent
+  has to pick one and one of them goes stale the moment the plugin updates. The
+  plugin's copy is the maintained one, so it wins. A skill left from a
+  pre-plugin install is retired to `SKILL.md.superseded-by-plugin`.
+  `WA_FORCE_SKILL=1` overrides. Detection reads Claude Code's plugin registry
+  and falls back to the plugin cache if that format changes.
+- Only the skill is conditional: `update.sh` still regenerates the launchd
+  plists and the MCP launcher either way, since those carry this install's own
+  paths and settings and the plugin does not provide them.
+
 ## [2.9.0] — 2026-09-07
 
 Packaged as a Claude Code plugin, and the last of the productization findings.
