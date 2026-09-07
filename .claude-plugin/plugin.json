@@ -1,0 +1,22 @@
+{
+  "name": "whatsapp-vault-connector",
+  "version": "2.9.0",
+  "description": "Run WhatsApp on your Mac, write every conversation into your Obsidian vault as markdown, and let Claude Code read and send. Includes a health layer that tells you when reception breaks instead of failing quietly.",
+  "author": {
+    "name": "Danny Bravo",
+    "url": "https://github.com/danilobrando"
+  },
+  "repository": "https://github.com/danilobrando/whatsapp-vault-connector",
+  "license": "MIT",
+  "homepage": "https://github.com/danilobrando/whatsapp-vault-connector#readme",
+  "keywords": [
+    "whatsapp",
+    "obsidian",
+    "second-brain",
+    "baileys",
+    "mcp",
+    "messaging",
+    "vault",
+    "macos"
+  ]
+}

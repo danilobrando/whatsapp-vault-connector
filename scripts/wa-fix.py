@@ -1105,6 +1105,23 @@ def _wait_for_log_marker(path: Path, marker: str, timeout_s: int) -> bool:
     return False
 
 
+def _daemon_env() -> dict:
+    """Read the daemon's configured environment from its launchd plist.
+
+    A shell does not inherit what launchd injects, so any helper we spawn by
+    hand (the pairing export, most importantly) would otherwise run with
+    different settings than the daemon — writing conversation files to another
+    directory, or without the configured filename suffix.
+    """
+    keys = ("WA_INBOX_PATH", "WA_INBOX_SUFFIX", "WA_SENDER_NAME", "WA_TZ", "VAULT_ROOT")
+    try:
+        import plistlib
+        env = plistlib.loads(LAUNCHD_PLIST.read_bytes()).get("EnvironmentVariables", {})
+        return {k: str(env[k]) for k in keys if k in env}
+    except Exception:
+        return {}
+
+
 def _ensure_pair_dir() -> None:
     os.umask(0o077)
     PAIR_DIR.mkdir(mode=0o700, exist_ok=True)
@@ -1264,6 +1281,9 @@ def cmd_repair(args) -> int:
     sync_proc = subprocess.Popen(
         ["node", str(SYNC_SCRIPT)],
         cwd=str(SCRIPT_DIR),
+        # Inherit the daemon's own inbox configuration, or the pairing export
+        # lands somewhere other than where live messages are written.
+        env={**os.environ, **_daemon_env()},
         stdout=PAIR_LOG.open("wb"),
         stderr=subprocess.STDOUT,
         start_new_session=True,

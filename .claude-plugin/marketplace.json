@@ -1,0 +1,15 @@
+{
+  "name": "whatsapp-vault-connector",
+  "owner": {
+    "name": "Danny Bravo",
+    "url": "https://github.com/danilobrando"
+  },
+  "plugins": [
+    {
+      "name": "whatsapp-vault-connector",
+      "source": "./",
+      "description": "WhatsApp in your Obsidian vault, readable and sendable from Claude Code — with a health layer that catches a dead connector in hours instead of weeks.",
+      "version": "2.9.0"
+    }
+  ]
+}

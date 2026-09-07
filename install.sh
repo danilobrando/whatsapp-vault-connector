@@ -180,10 +180,10 @@ ok "Dependencies installed."
 substitute() {
   # substitute <template_file> <output_file>
   local template="$1"; local out="$2"
-  python3 - "$template" "$out" "$SCRIPTS_DIR" "$LAUNCHD_LABEL_DAEMON" "$LAUNCHD_LABEL_WATCHDOG" "$SENDER_NAME" "$TZ_VAL" "$INBOX_SUFFIX" "$ALERT_EMAIL" "$ALERT_COMMAND" "$MAIL_SENDER" <<'PYEOF'
+  python3 - "$template" "$out" "$SCRIPTS_DIR" "$LAUNCHD_LABEL_DAEMON" "$LAUNCHD_LABEL_WATCHDOG" "$SENDER_NAME" "$TZ_VAL" "$INBOX_SUFFIX" "$ALERT_EMAIL" "$ALERT_COMMAND" "$MAIL_SENDER" "$PKG_DIR" <<'PYEOF'
 import sys
 (template, out, scripts_dir, label_d, label_w, sender, tz, suffix,
- alert_email, alert_cmd, mail_sender) = sys.argv[1:]
+ alert_email, alert_cmd, mail_sender, clone_dir) = sys.argv[1:]
 with open(template, 'r', encoding='utf-8') as f:
     content = f.read()
 content = (content
@@ -195,7 +195,8 @@ content = (content
     .replace('__INBOX_SUFFIX__', suffix)
     .replace('__ALERT_EMAIL__', alert_email)
     .replace('__ALERT_COMMAND__', alert_cmd)
-    .replace('__MAIL_SENDER__', mail_sender))
+    .replace('__MAIL_SENDER__', mail_sender)
+    .replace('__CLONE_DIR__', clone_dir))
 with open(out, 'w', encoding='utf-8') as f:
     f.write(content)
 PYEOF
@@ -303,7 +304,7 @@ say "(After pairing, the script may continue to export your message history;"
 say " that part can take several minutes for accounts with thousands of chats.)"
 say ""
 read -p "Press Enter to continue..." _
-( cd "$SCRIPTS_DIR" && WA_SENDER_NAME="$SENDER_NAME" WA_TZ="$TZ_VAL" WA_INBOX_SUFFIX="$INBOX_SUFFIX" node sync.mjs --groups )
+( cd "$SCRIPTS_DIR" && WA_SENDER_NAME="$SENDER_NAME" WA_TZ="$TZ_VAL" WA_INBOX_SUFFIX="$INBOX_SUFFIX" WA_INBOX_PATH="${WA_INBOX_PATH:-}" node sync.mjs --groups )
 ok "Pairing complete."
 
 # ── Load launchd jobs ───────────────────────────────────────────────────────

@@ -43,7 +43,15 @@ const VAULT_ROOT = process.env.VAULT_ROOT || path.resolve(__dir, '..', '..')
 // write to different filenames than the daemon and fork every conversation.
 const INBOX_SUFFIX = process.env.WA_INBOX_SUFFIX || ''
 
-const OUTPUT_DIR = path.join(VAULT_ROOT, process.env.WA_OUTPUT || '⚙️ Meta/whatsapp-inbox')
+// Same variable and the same absolute semantics as daemon.mjs and
+// mcp-server.mjs. Until v2.9.0 this script read WA_OUTPUT and treated it as a
+// path relative to the vault root, so anyone who set WA_INBOX_PATH — the one
+// the README documents — got their pairing export written somewhere other than
+// where the daemon then wrote live messages. WA_OUTPUT stays as a legacy alias.
+const OUTPUT_DIR = process.env.WA_INBOX_PATH
+  || (process.env.WA_OUTPUT
+        ? path.resolve(VAULT_ROOT, process.env.WA_OUTPUT)
+        : path.join(VAULT_ROOT, '⚙️ Meta', 'whatsapp-inbox'))
 const AUTH_DIR   = path.join(__dir, 'baileys_auth')
 const STORE_FILE = path.join(__dir, 'baileys_store.json')
 

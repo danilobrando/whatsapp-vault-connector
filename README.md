@@ -103,6 +103,24 @@ Everything in `wa-fix.py` and `wa-watchdog.sh` is built around not repeating tha
 
 ## Install
 
+### With Claude Code (recommended)
+
+This repository is its own plugin marketplace, so your agent can do the setup
+with you:
+
+```
+/plugin marketplace add danilobrando/whatsapp-vault-connector
+/plugin install whatsapp-vault-connector
+```
+
+Then just say **"set up WhatsApp in my vault"**. The plugin's skill walks
+through the requirements, states the risks, runs the installer, and holds your
+hand through the QR pairing. Afterwards the same skill is what repairs things
+when something breaks — you say "WhatsApp isn't working" and it takes it from
+there.
+
+### By hand
+
 ```bash
 git clone https://github.com/danilobrando/whatsapp-vault-connector ~/whatsapp-vault-connector
 cd ~/whatsapp-vault-connector
@@ -112,37 +130,33 @@ bash install.sh
 The installer is interactive and asks:
 
 1. Path to your Obsidian vault root (default: `~/second-brain`)
-2. Your display name as it appears on outbound messages saved to the vault (default: `Me`)
+2. Your display name as it appears on outbound messages saved to the vault
 3. An optional filename suffix, e.g. `" (WhatsApp)"`, to keep conversation files
-   distinguishable from your other notes (default: none)
+   distinguishable from your other notes
 4. **Where outage alerts should go** — an email address, or your own command.
    You can leave it blank, but then the only alert is a local desktop
-   notification, and `wa-fix.py doctor` will keep reminding you. This matters:
-   detection that delivers nowhere is the exact failure this project exists to
-   prevent. Prove it works with `bash wa-watchdog.sh --test-alert`.
-5. Timezone (default: `America/Bogota` — change it)
+   notification, and `wa-fix.py doctor` will keep reminding you. Detection that
+   delivers nowhere is the exact failure this project exists to prevent. Prove
+   yours works with `bash wa-watchdog.sh --test-alert`.
+5. Timezone
 
-Then it does everything else: copies scripts to `<vault>/connectors/whatsapp/` (the standard location for second-brain connectors), installs npm dependencies, generates launchd plists from templates, registers the MCP server in `.mcp.json`, optionally adds a session-start hook, and walks you through the QR pairing.
+Then it copies scripts to `<vault>/connectors/whatsapp/`, **writes a
+`.gitignore` there** so your Signal keys and `node_modules` cannot be committed
+with your vault, installs npm dependencies, generates the launchd plists,
+registers the MCP server, optionally adds a session-start hook, and walks you
+through pairing.
 
-> **Note on the standard layout.** All connectors for a second-brain vault install under `<vault>/connectors/<name>/`. Operational state (auth keys, logs, runtime files) lives there. Inbox / conversation history lives at `<vault>/⚙️ Meta/whatsapp-inbox/` by default but can be overridden via the `WA_INBOX_PATH` environment variable.
+Re-running the installer is safe. It is idempotent and unloads any running
+daemon first.
 
-Re-running the installer is safe. It's idempotent and will unload any existing daemon first.
-
-### One-liner
-
-```bash
-git clone https://github.com/danilobrando/whatsapp-vault-connector ~/whatsapp-vault-connector && bash ~/whatsapp-vault-connector/install.sh
-```
-
-### Updating an existing install
-
-To pull the latest code without re-pairing or re-exporting history:
+### Updating
 
 ```bash
-cd ~/whatsapp-vault-connector && bash update.sh
+bash ~/whatsapp-vault-connector/update.sh
 ```
 
-`update.sh` does a `git pull`, replaces source files and templates, runs `npm install` only when `package-lock.json` changed, restarts the daemon + watchdog, and runs `wa-fix doctor`. State (auth keys, message store, vault inbox) is preserved.
+It preserves your settings — display name, timezone, filename suffix and alert
+configuration are read back out of the existing plists, not asked again.
 
 ## Pairing
 
@@ -158,15 +172,27 @@ After "Connected" appears, the script continues to download recent message histo
 
 You don't type commands. When you notice something wrong with WhatsApp — messages stuck on "processing", chats not appearing in the vault, can't send — just tell Claude Code in plain language. The `whatsapp-recovery` skill is loaded globally and the agent will run the diagnostic and either auto-repair or guide you through any manual fix.
 
-If you ever want to run the diagnostic yourself:
+If you ever want to drive it yourself:
 
 ```bash
-# Read-only diagnostic
-python3 "<vault>/connectors/whatsapp/wa-fix.py" doctor
+WA="<vault>/connectors/whatsapp"
 
-# Diagnose + auto-repair
-python3 "<vault>/connectors/whatsapp/wa-fix.py" fix
+python3 "$WA/wa-fix.py" doctor          # read-only, 17 checks
+python3 "$WA/wa-fix.py" doctor --json   # verdict + escalate, for tooling
+python3 "$WA/wa-fix.py" fix             # diagnose, then auto-repair what it can
+python3 "$WA/wa-fix.py" repair          # full re-pair — needs your phone, ~6 min
+python3 "$WA/wa-fix.py" version
+
+bash "$WA/wa-watchdog.sh" --test-alert  # prove your alert channel works
 ```
+
+Exit codes: `0` healthy · `1` degraded, auto-fixable · `2` needs your phone ·
+`3` aborted · `4` hard error.
+
+`repair` wipes the current session before showing you a QR, so the connector is
+fully down until you scan. Have your phone in hand before you start, and know
+that messages missed during an outage are not recovered — they are on your
+phone, they were never delivered here.
 
 ## Architecture
 
@@ -203,21 +229,37 @@ python3 "<vault>/connectors/whatsapp/wa-fix.py" fix
 └─────────────────────────────────────┘  └──────────────────────┘
 ```
 
-## Failure modes that `wa-fix fix` handles
+## What the diagnostic checks
 
-| Failure | Auto-fix? | Action |
-|---|---|---|
-| Daemon process dead | Yes | `launchctl kickstart` |
-| Daemon hung (event loop frozen) | Yes | Kill + kickstart |
-| Stale `.daemon.lock` | Yes | Remove lockfile |
-| `baileys_auth/` permissions loose | Yes | chmod 0700/0600 |
-| Missing `logs/` dir | Yes | mkdir |
-| IPC socket dead but daemon running | Yes | kickstart |
-| Vault directory missing | Yes | mkdir |
-| `launchd` plist missing | No | Print re-install steps |
-| `baileys_auth/` missing (not paired) | No | Print sync.mjs QR steps |
-| Session keys drifted (Bad MAC / PreKeyError) | No | Print full re-pair sequence |
-| Persistent high disconnect rate | No | Print network troubleshooting |
+Generated from `wa-fix.py` by `scripts/gen-docs.py`, so it cannot drift from the
+code. Run `python3 scripts/gen-docs.py --check` to verify.
+
+| Check | If it fails |
+|---|---|
+| `inbound-freshness` | `repair` — needs your phone |
+| `launchd-plist` | reported, manual |
+| `auth-dir` | `repair` — needs your phone |
+| `daemon-process` | `fix` — automatic |
+| `daemon-lock` | `fix` — automatic |
+| `heartbeat` | `fix` — automatic |
+| `wa-connection` | reported, manual |
+| `ipc` | `fix` — automatic |
+| `secret-perms` | `fix` — automatic |
+| `logs-dir` | `fix` — automatic |
+| `session-keys` | `repair` — needs your phone |
+| `daemon-state` | `repair` — needs your phone |
+| `key-inventory` | `repair` — needs your phone |
+| `alert-channel` | reported, manual |
+| `stability` | reported, manual |
+| `code-identity` | reported, manual |
+| `msgstore` | reported, manual |
+
+17 checks. `inbound-freshness` runs first and is the only one that can veto a healthy verdict.
+
+`python3 wa-fix.py doctor --json` returns a `verdict` and an `escalate` field
+(`none` / `fix` / `repair`) so tooling reads a decision instead of parsing
+prose. Exit codes: `0` healthy, `1` degraded and auto-fixable, `2` needs your
+phone, `3` aborted, `4` hard error.
 
 ## Privacy and security
 
@@ -231,8 +273,15 @@ python3 "<vault>/connectors/whatsapp/wa-fix.py" fix
 
 ```
 .
-├── install.sh                                    # interactive installer (12 steps)
-├── README.md
+├── .claude-plugin/                               # makes this repo a Claude Code plugin
+│   ├── plugin.json                               #   + its own marketplace
+│   └── marketplace.json
+├── skills/whatsapp-connector/SKILL.md            # the skill your agent installs
+├── install.sh                                    # interactive installer
+├── update.sh                                     # in-place upgrade, preserves settings
+├── README.md · CHANGELOG.md · CHANGELOG.es.md
+├── SECURITY.md                                   # assets, controls, known gaps
+├── CONTRIBUTING.md
 ├── LICENSE                                       # MIT
 ├── .gitignore                                    # excludes runtime state
 ├── scripts/                                      # connector source code
@@ -242,7 +291,9 @@ python3 "<vault>/connectors/whatsapp/wa-fix.py" fix
 │   ├── send.mjs / send-document.mjs              # standalone send helpers
 │   ├── download_wa_photo.mjs                     # contact photo helper
 │   ├── wa-fix.py                                 # self-healing doctor + fix
-│   ├── wa-watchdog.sh                            # 60s hung-daemon detector
+│   ├── wa-watchdog.sh                            # 60s liveness + reception detector
+│   ├── gen-docs.py                               # regenerates the check table
+│   ├── hooks/pre-commit                          # blocks real numbers from commits
 │   ├── run-daemon.sh                             # launchd entry point (rotates logs)
 │   └── package.json                              # Baileys dep, MCP SDK
 └── templates/                                    # placeholders substituted at install

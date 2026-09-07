@@ -1,6 +1,27 @@
 ---
 name: whatsapp-recovery
-description: WhatsApp connector autonomous self-healing + self-update layer. The connector (a Baileys daemon at __SCRIPTS_DIR__) sends and receives WhatsApp messages on behalf of the user. This skill is the recovery + update contract. **AUTO-RECOVERY TRIGGER: when the user reports ANY issue related to WhatsApp, mensajes, contactos, chats, "se queda en procesando", "no le llegan los mensajes", "el WhatsApp no funciona", "no me responden", "no puedo enviar", "está fallando WhatsApp" — invoke this skill FIRST and silently run `python3 "__SCRIPTS_DIR__/wa-fix.py" fix` BEFORE responding.** **AUTO-UPDATE TRIGGER: when the user says "actualizá el WhatsApp / el conector / Claude WhatsApp", "trae lo último", "hay update?", "update WhatsApp", "fijate si hay versión nueva", "pull latest", "upgrade WhatsApp connector" — invoke this skill and run `bash ~/whatsapp-vault-connector/update.sh`, then summarize what changed in plain language.** Parse the output and either confirm the auto-repair/update OR walk the user through any manual steps conversationally. Use also when user says "está raro lo de WhatsApp", "el bot de WhatsApp", "el daemon", "el conector de mensajes". Do NOT use for sending a specific WhatsApp message (use whatsapp_send MCP tool), for searching conversation history (use whatsapp_read_recent or vault search), or for non-WhatsApp messaging (Telegram, Signal, etc.).
+description: |
+  Self-healing and update layer for the WhatsApp vault connector — a Baileys
+  daemon at __SCRIPTS_DIR__ that sends and receives WhatsApp on the user's
+  behalf and writes conversations into their vault.
+
+  AUTO-RECOVERY TRIGGER — when the user reports ANY WhatsApp trouble, invoke
+  this skill FIRST and silently run
+  `python3 "__SCRIPTS_DIR__/wa-fix.py" doctor --json` BEFORE replying.
+  English: "WhatsApp isn't working", "messages aren't arriving", "stuck on
+  waiting for this message", "I can't send", "the daemon is down", "nothing new
+  in my vault", "WhatsApp got disconnected", "it stopped syncing".
+  Español: "el WhatsApp no funciona", "no me llegan los mensajes", "se queda en
+  procesando", "no puedo enviar", "no veo mensajes nuevos", "se desconectó",
+  "está raro lo de WhatsApp", "el conector de mensajes".
+
+  AUTO-UPDATE TRIGGER — "update the WhatsApp connector", "is there a new
+  version?", "pull latest", "actualizá el conector", "hay update?": run
+  `bash __CLONE_DIR__/update.sh` and summarise what changed in plain language.
+
+  Do NOT use for sending one specific message (use the whatsapp_send MCP tool),
+  for searching conversation history (whatsapp_read_recent), or for any other
+  messaging platform.
 ---
 
 # whatsapp-recovery: autonomous self-healing for the WhatsApp connector
@@ -25,21 +46,21 @@ Run silently. Do NOT show the user the command. Do NOT explain you're "running d
 
 ### Trigger phrases (treat broadly)
 
-In Spanish:
-- "el WhatsApp no funciona", "no me funciona el WhatsApp"
-- "se queda en procesando", "los mensajes se quedan procesando"
-- "waiting for this message", "esperando este mensaje"
-- "le mandé y no le llegó", "envié y no lo veo en mi celular"
-- "no puedo enviar mensajes desde Claude", "no me deja enviar"
-- "no responde el bot", "el daemon está fallando"
-- "no veo nuevos mensajes en el vault"
-- "está raro lo de WhatsApp", "algo pasa con WhatsApp"
-- "se desconectó WhatsApp", "perdí WhatsApp"
-- "se desincronizó", "no se sincroniza"
+The user does not know the words "daemon", "Baileys" or "Signal session", and
+should never have to. Treat any of these as a trigger, in either language:
 
-In English: equivalents (WhatsApp not working, stuck processing, etc.).
+| English | Español |
+|---|---|
+| WhatsApp isn't working | el WhatsApp no funciona |
+| messages aren't arriving | no me llegan los mensajes |
+| stuck on "waiting for this message" | se queda en "procesando" |
+| I sent it and they never got it | le mandé y no le llegó |
+| I can't send from Claude | no puedo enviar desde Claude |
+| no new messages in my vault | no veo mensajes nuevos en el vault |
+| WhatsApp disconnected / lost sync | se desconectó / se desincronizó |
+| something's off with WhatsApp | está raro lo de WhatsApp |
 
-When in doubt, run `wa-fix`. It is idempotent and cheap.
+When in doubt, run the diagnostic. It is read-only and cheap.
 
 ### How to interpret `wa-fix fix` output
 
@@ -103,7 +124,7 @@ After wa-fix + manual steps both done and still failing, suggest contacting the 
 When the user asks to update the connector (trigger phrases in the frontmatter), run:
 
 ```bash
-bash ~/whatsapp-vault-connector/update.sh
+bash __CLONE_DIR__/update.sh
 ```
 
 The update script does: `git pull` → stop daemon → copy new source files → npm install only if needed → regenerate plists/launcher/skill from templates → restart daemon → `wa-fix doctor`. State (auth, message store, vault inbox) is preserved.
@@ -126,9 +147,9 @@ The update script does: `git pull` → stop daemon → copy new source files →
 If `update.sh` errors with "not a git repository", "fatal: not a git repository", or the clone directory is missing, the local checkout is broken or was deleted. Re-clone and re-run:
 
 ```bash
-rm -rf ~/whatsapp-vault-connector
-git clone https://github.com/danilobrando/whatsapp-vault-connector ~/whatsapp-vault-connector
-bash ~/whatsapp-vault-connector/update.sh
+rm -rf __CLONE_DIR__
+git clone https://github.com/danilobrando/whatsapp-vault-connector __CLONE_DIR__
+bash __CLONE_DIR__/update.sh
 ```
 
 The active install (auth keys, message store, vault inbox files) is in `__SCRIPTS_DIR__`, not in the clone, so wiping the clone is safe.

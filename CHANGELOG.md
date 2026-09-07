@@ -1,232 +1,201 @@
 # Changelog
 
-Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) · Versionado: [SemVer](https://semver.org/lang/es/)
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/)
+
+English is canonical. A fuller Spanish account, written as the work happened,
+is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
+
+## [2.9.0] — 2026-09-07
+
+Packaged as a Claude Code plugin, and the last of the productization findings.
+
+### Added
+- **Installable as a Claude Code plugin.** The repository is its own plugin
+  marketplace, so any Claude Code user can add it and let their agent drive the
+  rest of the setup.
+- `WA_LANG` is not needed: the skill now carries bilingual trigger phrases
+  (English and Spanish) with English as the working language.
+
+### Changed
+- **English is the project language.** The skill, alert emails and this
+  changelog are in English; the original Spanish changelog is preserved as
+  `CHANGELOG.es.md`.
+- `sync.mjs` reads `WA_INBOX_PATH`, the variable the README documents and the
+  daemon already used. It previously read `WA_OUTPUT` and treated it as
+  vault-relative, so anyone setting `WA_INBOX_PATH` got their pairing export
+  written somewhere other than where live messages landed. `WA_OUTPUT` remains
+  as a legacy alias.
+- `wa-fix.py repair` passes the daemon's own configuration to the pairing
+  export, so the two cannot disagree about where conversations go.
+- The skill no longer hardcodes the clone location; the installer substitutes
+  the real path.
 
 ## [2.8.1] — 2026-09-05
 
-### Corregido
-- **`DRIFT_DETECTED` dejaba de enviar por culpa de una red inestable.** La regla era
-  «muchas reconexiones **Y** cero envíos exitosos», y ese invariante es falso: cero
-  envíos exitosos casi siempre significa que **nadie intentó enviar**, no que enviar
-  esté roto. Observado el 5-sep: cinco reconexiones por timeouts de red (códigos
-  408/405), nadie enviando, y el daemon se puso a rechazar salientes mientras la
-  recepción funcionaba perfectamente (447 entrantes de 29 contactos ese día).
+### Fixed
+- **`DRIFT_DETECTED` blocked sending because of a flaky network.** The rule was
+  "many reconnects AND zero successful sends", and that invariant is false: zero
+  successful sends almost always means nobody tried to send, not that sending is
+  broken. Observed on 2026-09-05 — five reconnects from transient timeouts
+  (codes 408/405), nobody sending, and the daemon began refusing outbound while
+  reception was demonstrably fine (447 inbound from 29 contacts that day).
 
-  La deriva ahora exige **evidencia positiva** de que los mensajes no pasan:
-  `decryptFail1h >= 30`, o silencio de entrada de 18h o más con la ventana de 24h
-  ya observada. Es la misma clase de error que motivó todo el trabajo de
-  observabilidad de la v2.5.0 — confundir ausencia de evidencia con evidencia de
-  fallo — y había sobrevivido dentro de la propia máquina de estados.
-- **Estado `UNSTABLE` nuevo** para el caso de muchas reconexiones sin evidencia de
-  fallo. Se reporta (WARN en el doctor) pero **no bloquea envíos**: castigar al
-  usuario por una red con hipo no arregla nada.
+  Drift now requires positive evidence that messages are not getting through:
+  `decryptFail1h >= 30`, or 18h+ of inbound silence once a full 24h window has
+  actually been observed.
+- **New `UNSTABLE` state** for reconnect churn with no evidence of failure.
+  Surfaced as a warning, never blocking sends — punishing the user for a flaky
+  network fixes nothing.
 
 ## [2.8.0] — 2026-09-05
 
-Hallazgos de la revisión de productización de 3 expertos (Adam Wiggins, Mitchell
-Hashimoto, Mike McQuaid) previa a publicar. 20 confirmados, 3 bloqueantes.
+Findings from a productization review before publishing. Three were blocking,
+and all three only bite someone who is not the author.
 
-### Corregido — BLOQUEANTES
-- **`python` → `python3` en todas partes.** El hook de auto-recuperación proactiva y
-  la skill invocaban `python`, que **no existe en un macOS de fábrica** desde 12.3.
-  La función estrella de auto-reparación estaba muerta al llegar para cualquiera con
-  un Mac limpio.
-- **El instalador escribe un `.gitignore` dentro del vault.** Ponía `baileys_auth/`
-  —la credencial que autentica la máquina COMO tu WhatsApp—, el message store, los
-  logs y ~80 MB de `node_modules` dentro del directorio de notas del usuario, sin
-  ningún ignore ahí. Un `git add -A` en un vault versionado publicaba las llaves.
-- **El daemon ya no puede sobrescribir una conversación existente.** `resolveFilePath`
-  hacía `writeFileSync` incondicional cuando el jid no estaba en el índice. Combinado
-  con el punto siguiente, un usuario nuevo con la configuración por defecto perdía el
-  historial de sus grupos en el primer mensaje. Ahora adopta el archivo si es la misma
-  conversación, y si no, escribe a un nombre nuevo y avisa.
-
-### Corregido — otros
-- **`sync.mjs` escribe `jid:` para grupos**, no `phone:`. El índice del daemon mapea
-  `phone:` a `<dígitos>@s.whatsapp.net`, que nunca coincide con un `@g.us` real, así
-  que los grupos exportados eran invisibles para el índice.
-- **`install.sh` pasa `WA_INBOX_SUFFIX` a `sync.mjs`**; sin eso el export de historia
-  ignoraba la opción que el propio instalador acababa de ofrecer.
-- **`send.mjs` y `send-document.mjs` se niegan a correr con el daemon vivo.** Abrían
-  su propia sesión Baileys sobre el mismo `baileys_auth/`: dos procesos escribiendo
-  el mismo estado Signal es una vía directa a la deriva de sesión.
-- **El launcher del MCP transporta la configuración.** Claude Code lo lanza con un
-  entorno vacío, así que sin `WA_INBOX_SUFFIX` el servidor MCP resolvía nombres mal.
-- **Una sola versión.** `wa-fix.py` se anunciaba como v0.1.0 mientras el paquete iba
-  en 2.x; ahora la toma de `package.json`.
-- **Las alertas ya no le atribuyen al lector estadísticas del vault del autor.** El
-  «16.9h» es la referencia con la que se calibró, y ahora lo dice así.
-- **README**: el socket ya no se documenta en `/tmp` (se movió en v2.6.0), y la
-  desinstalación ahora explica que **no** borra las credenciales, con los pasos para
-  hacerlo y para desvincular el dispositivo desde el teléfono.
+### Fixed
+- **`python` → `python3` everywhere.** The proactive auto-recovery hook and the
+  skill invoked `python`, which has not existed on a stock macOS since 12.3. The
+  headline self-healing feature was dead on arrival for anyone with a clean Mac.
+- **The installer now writes a `.gitignore` inside the vault.** It placed
+  `baileys_auth/` — the credential that authenticates the machine *as* your
+  WhatsApp — plus the message store, logs and ~80 MB of `node_modules` inside
+  the user's notes directory with no ignore file there. A `git add -A` in a
+  versioned vault published the keys.
+- **The daemon can no longer overwrite an existing conversation.**
+  `resolveFilePath` wrote frontmatter unconditionally when a jid was missing
+  from the index. Combined with the next item, a new user on default settings
+  lost their group history on the first incoming group message.
+- **`sync.mjs` writes `jid:` for groups**, not `phone:`. The daemon's index maps
+  `phone:` to `<digits>@s.whatsapp.net`, which can never match a real `@g.us`,
+  so exported groups were invisible to it.
+- **`send.mjs` and `send-document.mjs` refuse to run beside the daemon.** They
+  opened a second Baileys session against the same `baileys_auth/`; two
+  processes writing one Signal store is a direct route to the drift this
+  project exists to detect.
+- **The MCP launcher carries configuration.** Claude Code spawns it with a bare
+  environment, so without `WA_INBOX_SUFFIX` the server resolved contact names
+  incorrectly.
+- One version number across the release; `wa-fix.py` announced itself as v0.1.0
+  while the package was at 2.x.
+- Alerts no longer quote the author's vault statistics as if they were the
+  reader's.
 
 ## [2.7.0] — 2026-09-05
 
-Preparación para publicar el repositorio. Cambios de contrato, no cosméticos.
+### Fixed
+- **No hardcoded alert recipient.** `wa-watchdog.sh` shipped the author's
+  personal email as the default: anyone installing this mailed their outage
+  alerts to the author's inbox, and the channel read as configured when it was
+  not.
+- **The alert channel no longer depends on the author's vault.** It previously
+  invoked a mail script that exists only on the author's machine, so on a fresh
+  install the headline feature of v2.5.0 silently did nothing. Now pluggable:
+  `WA_ALERT_COMMAND`, or `ALERT_EMAIL` with a mail sender / `mail` / `sendmail`.
+- **Alert settings travel in the watchdog plist.** launchd does not inherit the
+  shell environment, so exporting them from a shell profile did nothing.
 
-### Corregido — BLOQUEANTES para cualquiera que no sea el autor
-- **El destinatario de alertas ya no está quemado.** `wa-watchdog.sh` traía el correo
-  personal del autor como valor por defecto: quien instalara esto sin configurar nada
-  le mandaba SUS alertas de caída a la bandeja del autor, y el canal se veía
-  configurado sin estarlo. Ahora no hay destinatario por defecto.
-- **El canal de alerta ya no depende del vault del autor.** Antes invocaba
-  `⚙️ Meta/scripts/gmail/gmail-send.mjs`, un script que solo existe en la máquina del
-  autor — así que en una instalación nueva la función estrella de la v2.5.0
-  silenciosamente no hacía nada. Ahora es configurable: `WA_ALERT_COMMAND` (comando
-  arbitrario), `ALERT_EMAIL` con `WA_MAIL_SENDER`/`mail`/`sendmail`, y la notificación
-  local solo como último recurso.
-- **Las variables de alerta viajan en el plist del vigilante.** launchd no hereda el
-  entorno del shell, así que exportarlas en `.zshrc` no hacía nada. `install.sh` las
-  pregunta y `update.sh` las preserva.
-- **El cuerpo del correo pasó a inglés**, como el resto del repositorio.
-
-### Añadido
-- **Chequeo `alert-channel`** (17 chequeos en total). Un detector que avisa a ninguna
-  parte reproduce exactamente el fallo que este proyecto existe para evitar, así que
-  la ausencia de canal es un hallazgo, no una nota al pie.
-- **`wa-watchdog.sh --test-alert`** para probar la escalación antes de necesitarla.
-  Lee la configuración del plist, no del shell, para que el simulacro ejercite el
-  mismo camino que usará el job programado.
-- **README reescrito** con gancho, diagrama, **los riesgos por delante** (Baileys es
-  no oficial y pueden banear la cuenta; las conversaciones quedan en texto plano;
-  `baileys_auth/` es una credencial), declaración de alcance de lo que NO hace, y
-  estado alfa honesto.
-- **SECURITY.md** con el inventario de activos, los controles, y los huecos conocidos
-  declarados en vez de dejados para que el usuario los descubra.
-- **CONTRIBUTING.md** con la regla de no commitear identificadores reales y el hook.
-- **Plantillas de issue** que piden `doctor --json` y obligan a separar envío de
-  recepción, porque fallan de forma independiente.
+### Added
+- **`alert-channel` check.** Detection that delivers nowhere reproduces the very
+  failure this project exists to prevent, so a missing channel is a finding.
+- **`wa-watchdog.sh --test-alert`** to prove the escalation path works before
+  you need it. It reads the plist, not the shell, so the drill exercises the
+  same path the scheduled job will use.
+- README leading with the risks, `SECURITY.md` declaring known gaps rather than
+  hiding them, `CONTRIBUTING.md`, and issue templates.
 
 ## [2.6.0] — 2026-09-05
 
-Los 24 hallazgos restantes del panel de 5 expertos (12 P1, 12 P2).
+Twenty-four findings from a five-expert hardening review.
 
-### Seguridad
-- **`process.umask(0o077)`** en `daemon.mjs`. Baileys reescribe las llaves Signal
-  cada pocos minutos con `writeFile` sin modo, así que nacían 0644 y un `chmod`
-  reactivo no podía ganarle: el 5-sep un chmod de 145 llaves se deshizo en minutos.
-- **El socket IPC sale de `/tmp`** (modo 1777, alcanzable por cualquier proceso de
-  la máquina) a un directorio `.run/` 0700. Aceptaba `send` sin autenticar.
-- **Los artefactos de emparejamiento salen de `/tmp`** a `.pair/` 0700, y el QR
-  —una credencial viva— se borra al terminar en vez de quedarse para siempre.
-- **El chequeo de permisos abarca todo el inventario de secretos**, no solo
-  `baileys_auth/`: encontró **11.541 archivos** laxos en los almacenes de mensajes,
-  el estado y los respaldos históricos. Antes miraba un solo directorio.
-- **`secret-perms` pasa de WARN a FAIL.** Como advertencia no podía disparar
-  ninguna alerta, porque `doctor` salía 0 con advertencias.
-- **`repair` endurece y poda**: el respaldo nace 0700, se excluye de Time Machine,
-  y se conservan solo los 2 más recientes.
+### Security
+- `process.umask(0o077)` in the daemon. Baileys rewrites Signal key files every
+  few minutes with no mode, so a reactive `chmod` could never win that race — a
+  chmod of 145 key files was undone within minutes.
+- The IPC socket moved out of `/tmp` (mode 1777, reachable by every process on
+  the machine) into a `0700` run directory. It accepts `send` unauthenticated.
+- Pairing artifacts moved out of `/tmp` and the QR — a live credential — is
+  deleted after use.
+- Permission checking covers the whole secret inventory, not just
+  `baileys_auth/`: it found **11,541** loose files across the message stores,
+  state and historical backups.
+- `secret-perms` is `FAIL`, not a warning. As a warning it could never trip an
+  alert, because `doctor` exited 0 on warnings.
+- `repair` hardens and prunes: backups are created `0700`, excluded from Time
+  Machine, and only the two most recent are kept.
 
-### Corregido
-- **La cadena de reconexión podía morir para siempre.** Tras dos fallos seguidos el
-  `catch` interno se tragaba el error sin reprogramar, y el proceso quedaba vivo con
-  heartbeat fresco: watchdog, doctor y `ps` lo llamaban sano. Ahora hay un supervisor
-  single-flight que SIEMPRE reprograma.
-- **`connect()` se reentraba sin destruir el socket anterior**, dejando escuchas
-  huérfanas que inflaban el contador de reconexiones del que se deriva DRIFT_DETECTED.
-- **La rotación de log usaba `rename` con el descriptor abierto**, así que el daemon
-  seguía escribiendo al inodo renombrado y la ruta canónica no existía nunca. Ahora
-  es copy-truncate, con 5 generaciones fechadas en vez de una sola destruida por ciclo.
-- **`run-daemon.sh` ya no renombra el stderr al arrancar** — launchd abre el archivo
-  y entrega el descriptor ANTES de que el script corra, así que el `mv` dejaba la ruta
-  canónica vacía. Esa es la causa de que `session-keys` devolviera "clean slate".
-- **`sync.mjs` ya no sobrescribe el histórico del vault.** Es el paso documentado de
-  recuperación y podía destruir el registro de lo que se perdió; ahora escribe al lado.
-- **`whatsapp_send` ya no adivina un nombre ambiguo**: devuelve los candidatos y no
-  envía. Enviar al contacto equivocado no se deshace.
+### Fixed
+- **The reconnect chain could die permanently.** After two consecutive failures
+  the inner catch swallowed the error without rescheduling, leaving a live
+  process with a fresh heartbeat that every check called healthy.
+- `connect()` re-entered without tearing down the previous socket, inflating the
+  reconnect counter `DRIFT_DETECTED` is derived from.
+- **Log rotation renamed a file with an open descriptor**, so the daemon kept
+  writing to the renamed inode and the canonical path never existed — the root
+  cause of `session-keys` reporting "clean slate" forever, by absence of input.
+- `sync.mjs`, the documented recovery step, no longer overwrites vault history.
+- Atomic vault writes; the contact store (~316 MB) is parsed once, not on every
+  reconnect.
 
-### Añadido
-- **`doctor --json`** con `verdict` y `escalate` (`none|fix|repair`), y códigos de
-  salida discretos (0/1/2/3/4). La skill lee un campo en vez de reconstruir el
-  criterio con regex sobre prosa alineada en columnas.
-- **Chequeo `daemon-state`**: la skill mandaba buscar `DRIFT_DETECTED` en una salida
-  donde esa cadena no podía aparecer. Ahora existe.
-- **Chequeo `key-inventory`**: backlog de pre-keys y conteo de sesiones, el mejor
-  indicador adelantado que ya estaba en disco (13.357 sesiones antes del re-pair
-  contra 94 después).
-- **`session-keys` lee la señal en proceso**, no un grep del log. Medido: el grep
-  contaba 44 donde los mensajes realmente no descifrados eran 8, porque contaba
-  líneas de traza. Ahora es una tasa por hora con umbral 5/h WARN, 30/h FAIL.
-- **Catálogo de desconexión** deliberadamente corto: solo 515 y 440 cambian el
-  comportamiento. Una tabla completa fue refutada con datos — julio, un mes sano de
-  18.900 mensajes, tuvo 337 cierres `500 badSession`.
-- **`whatsapp_daemon_status` responde con un veredicto en la primera línea** y
-  `isError: true` cuando está sordo, para que un agente no pueda leerlo como sano.
-- **Dead-man en `pipeline-watchdog.sh`**: si `.wa-health.jsonl` deja de crecer 3h, eso
-  es una alarma. El silencio nunca es salud.
+### Added
+- `doctor --json` with `verdict` and `escalate`, and discrete exit codes, so the
+  skill reads a field instead of regexing column-aligned prose.
+- `daemon-state` and `key-inventory` checks.
+- `session-keys` reads an in-process rate. A log grep counted 44 where the real
+  number of undecryptable messages was 8 — it was counting stack-trace lines.
 
 ## [2.5.0] — 2026-09-05
 
-Un apagón de recepción de 28 días (8-ago → 5-sep-2026) no fue detectado por
-ninguno de los 13 chequeos existentes. El daemon reportó `connected=true` todo
-el tiempo, envió mensajes a diario, y `doctor` — ejecutado el día 25 — imprimió
-`12 passed, 0 failed`. Esta versión existe para que eso no pueda repetirse.
+**The reason this health layer exists.**
 
-### Añadido
-- **Separación de señales entrante/saliente en `daemon.mjs`.** `lastInboundRealAt`
-  se mueve SOLO con un mensaje de un tercero. Los ecos del propio teléfono y los
-  auto-envíos van a `lastOwnEchoAt`. Se publican además `inboundReal24h`,
-  `inboundRealJids24h`, `decryptFail1h/24h` y `signalWindowComplete`.
-- **Captura de fallos de descifrado Signal** vía `messageStubType === 2`, la señal
-  más temprana de deriva de sesión: en el incidente de agosto habría disparado
-  dentro de la primera hora. El código anterior la descartaba en `if (!text) continue`.
-- **Chequeo `inbound-freshness` en `wa-fix.py`**, primero de la lista y único con
-  poder de veto sobre un veredicto sano. WARN a 9h, FAIL a 18h. Umbrales derivados
-  de 219 días de la bandeja real (158.818 entrantes): el hueco legítimo más largo
-  jamás medido fue 16,9h, así que 18h da cero falsos positivos sobre el histórico.
-- **Estado `UNKNOWN`.** La ausencia de evidencia ya nunca es PASS. El chequeo
-  `session-keys` devolvía `PASS "clean slate"` de forma permanente porque
-  `run-daemon.sh` renombra el archivo de stderr mientras launchd conserva el
-  descriptor abierto, así que la ruta canónica no existe nunca.
-- **`wa-watchdog.sh` pasa de vigilante de viveza a detector con voz**: evalúa la
-  recepción y escala por correo + notificación de macOS, con cooldown de 6h,
-  re-alerta al cambiar el cuadro, y silenciamiento con caducidad forzosa de 7 días.
-  Nunca alerta por WhatsApp: hacerlo escribe en la bandeja que el detector lee.
-- **`.wa-health.jsonl`**, una línea por corrida, como fuente del dead-man.
-- **Presupuesto de remediación**: >6 reinicios/24h avisa, >10 abre el circuito.
-  En julio hubo 1.954 reinicios en 4 días sin una sola salida humana.
-- **`WA_INBOX_SUFFIX`** — sufijo de nombre de archivo configurable. Antes era una
-  edición local no versionada que `update.sh` habría sobrescrito, bifurcando cada
-  conversación en dos archivos. `update.sh` ahora lo preserva leyéndolo con
-  `plistlib` (PlistBuddy se come el espacio inicial).
+From 8 August to 5 September 2026 this connector received nothing for 28 days
+and nothing noticed. The daemon reported `connected: true` the whole time, sent
+outbound messages every day, and `doctor` — run by hand on day 25 — printed
+`12 passed, 0 failed`.
 
-### Cambiado
-- El watchdog manda `SIGTERM` y espera 10s antes de `SIGKILL`: el daemon tiene
-  manejador que persiste estado y libera el lock, y nunca se le daba la oportunidad.
-- `STALE_SECONDS` de 90 a 300, unificado con `wa-fix.py`.
-- Detección de suspensión: si pasaron más de 30 min entre corridas, no se reinicia
-  el daemon y se suprime la evaluación de sordera 15 minutos.
-- El PID sale de `.daemon.lock` validado contra el nombre del proceso, no de
-  `pgrep -f daemon.mjs`, que coincide con cualquier línea de comandos.
-- La señal entrante se persiste en `.daemon_state.json`: sin eso el reloj de
-  silencio se reiniciaba en cada reinicio del watchdog y nunca llegaba a 18h.
+Every check measured whether the process was breathing. None asked whether
+messages were arriving. The one freshness field it published was written by both
+the send path and the receive path, so the vault's own scheduled reminders kept
+it looking fresh through total deafness: the alert channel was feeding the
+blindness.
 
-### Eliminado
-- `lastMessageAt`. Se escribía desde la ruta de envío Y la de recepción, así que
-  los recordatorios que el propio vault se manda lo mantuvieron fresco durante los
-  28 días de sordera. Se borra en vez de reinterpretarse: mientras exista, alguien
-  lo va a volver a usar.
+### Added
+- **Inbound/outbound signal separation.** `lastInboundRealAt` moves only for a
+  third-party message; own echoes and self-sends go elsewhere. Plus
+  `inboundReal24h`, `inboundRealJids24h`, `decryptFail1h/24h`,
+  `signalWindowComplete`.
+- **Signal decrypt-failure capture** via `messageStubType === 2` — the earliest
+  drift signal available. In the August incident it would have fired within the
+  first hour. The old code discarded it at `if (!text) continue`.
+- **`inbound-freshness` check**, first in the list and the only one that can veto
+  a healthy verdict. `WARN` at 9h, `FAIL` at 18h — thresholds derived from 219
+  days of a real inbox (158,818 inbound events) where the longest legitimate
+  quiet gap ever measured was 16.9h, giving zero false positives on the record.
+- **`UNKNOWN` status.** Absence of evidence is never `PASS`.
+- **The watchdog escalates out of band** (email plus a local notification), with
+  a cooldown, an expiring mute, and a remediation budget. It never alerts over
+  WhatsApp: doing so writes into the very inbox the detector reads.
+- `.wa-health.jsonl`, one line per run, as the dead-man source.
+- `WA_INBOX_SUFFIX` for configurable conversation filenames.
+
+### Removed
+- `lastMessageAt`. Deleted rather than reinterpreted: while it existed, someone
+  would use it again.
 
 ## [2.4.1] — 2026-09-05
 
-Republicado desde un árbol nuevo. La historia anterior (7 commits, 2026-05-21 → 2026-05-31)
-fue eliminada de forma deliberada y **no se puede recuperar desde este repositorio**.
+Republished from a clean tree. The previous history (7 commits, 2026-05-21 to
+2026-05-31) carried real third-party phone numbers, a real group id and two
+personal names used as examples. None of those people consented. Rewriting
+history was not enough — GitHub retains unreachable objects — so the repository
+was deleted and recreated.
 
-### Seguridad
-- **Eliminados identificadores reales de WhatsApp de terceros** que estaban presentes en
-  todos los commits de la historia anterior: dos números de teléfono personales
-  (`scripts/send.mjs`, `scripts/download_wa_photo.mjs`), un ID de grupo real
-  (`scripts/send-document.mjs`) y dos nombres propios usados como ejemplo.
-  Ninguna de esas personas consintió su publicación. Reescribir la historia no bastaba
-  (GitHub conserva objetos huérfanos accesibles por API), así que el repositorio se
-  eliminó y se recreó sin historia.
-- `scripts/download_wa_photo.mjs` ya no lleva un JID ni una ruta de salida quemados:
-  ahora los toma de `process.argv`.
-- **Nuevo `scripts/hooks/pre-commit`**: bloquea cualquier commit que contenga un JID de
-  WhatsApp o un número internacional con pinta de real. Instalar con
-  `ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit`.
+### Security
+- Real identifiers replaced with placeholders; `download_wa_photo.mjs` takes its
+  jid and output path from `process.argv`.
+- **`scripts/hooks/pre-commit`** blocks any commit containing a WhatsApp JID or a
+  real-looking international number.
 
-### Nota
-Este es el mismo código funcional que la v2.4.0. No hay cambios de comportamiento.
+## Earlier
 
-[2.4.1]: https://github.com/danilobrando/whatsapp-vault-connector/releases/tag/v2.4.1
+v2.0–v2.4 predate the rewritten history. See `CHANGELOG.es.md` for what those
+releases contained.

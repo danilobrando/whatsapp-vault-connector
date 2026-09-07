@@ -141,10 +141,10 @@ fi
 
 substitute() {
   local template="$1"; local out="$2"
-  python3 - "$template" "$out" "$SCRIPTS_DIR" "$LAUNCHD_LABEL_DAEMON" "$LAUNCHD_LABEL_WATCHDOG" "$SENDER_NAME_EXISTING" "$TZ_EXISTING" "$SUFFIX_EXISTING" "$ALERT_EMAIL_EXISTING" "$ALERT_CMD_EXISTING" "$MAIL_SENDER_EXISTING" <<'PYEOF'
+  python3 - "$template" "$out" "$SCRIPTS_DIR" "$LAUNCHD_LABEL_DAEMON" "$LAUNCHD_LABEL_WATCHDOG" "$SENDER_NAME_EXISTING" "$TZ_EXISTING" "$SUFFIX_EXISTING" "$ALERT_EMAIL_EXISTING" "$ALERT_CMD_EXISTING" "$MAIL_SENDER_EXISTING" "$PKG_DIR" <<'PYEOF'
 import sys
 (template, out, scripts_dir, label_d, label_w, sender, tz, suffix,
- alert_email, alert_cmd, mail_sender) = sys.argv[1:]
+ alert_email, alert_cmd, mail_sender, clone_dir) = sys.argv[1:]
 with open(template, 'r', encoding='utf-8') as f:
     content = f.read()
 content = (content
@@ -156,7 +156,8 @@ content = (content
     .replace('__INBOX_SUFFIX__', suffix)
     .replace('__ALERT_EMAIL__', alert_email)
     .replace('__ALERT_COMMAND__', alert_cmd)
-    .replace('__MAIL_SENDER__', mail_sender))
+    .replace('__MAIL_SENDER__', mail_sender)
+    .replace('__CLONE_DIR__', clone_dir))
 with open(out, 'w', encoding='utf-8') as f:
     f.write(content)
 PYEOF
