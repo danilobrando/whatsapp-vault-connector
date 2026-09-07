@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-vault-connector",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "description": "Self-healing WhatsApp connector for Obsidian / second-brain vaults. Baileys + MCP + launchd + auto-recovery.",
   "type": "module",
   "private": true,
@@ -15,8 +15,18 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@whiskeysockets/baileys": "^6.7.0",
+    "@whiskeysockets/baileys": "^6.17.16",
     "pino": "^9.0.0",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "async-mutex": "^0.5.0"
+  },
+  "overrides": {
+    "protobufjs": "^7.6.5",
+    "ws": "^8.21.0",
+    "axios": "^1.18.0",
+    "sharp": "^0.35.0",
+    "form-data": "^4.0.6",
+    "ip-address": "^10.3.1",
+    "fast-uri": "^3.1.6"
   }
 }

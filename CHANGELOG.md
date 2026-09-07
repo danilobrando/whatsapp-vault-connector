@@ -5,6 +5,49 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [2.12.0] — 2026-09-07
+
+Two live risks a comparison against other WhatsApp connectors surfaced, plus the
+fallout from fixing them.
+
+### Fixed — silent data loss
+- **Conversation files lost the jid domain.** Only groups got `jid:` in
+  frontmatter; everyone else got `phone: "+<digits>"`, and the index rebuilt that
+  as `<digits>@s.whatsapp.net`. WhatsApp identifies newer contacts with LIDs
+  (~14-16 digits, `@lid`), so those resolved to an address that does not exist —
+  and the daemon logged "Outbound message sent + persisted" with no error while
+  the message went nowhere. Groups stored with `phone:` had the same problem.
+
+  Measured on a real vault: **822 of 1,659 files were repairable, and 436 of them
+  had been resolving to a wrong address.** `scripts/migrate-jids.py` repairs them
+  from the jids WhatsApp itself recorded in `baileys_store.json` — ground truth,
+  not digit heuristics — and defaults to a dry run.
+- The daemon now writes the authoritative `jid:` for every conversation.
+
+### Fixed — 15 known vulnerabilities
+- `npm audit` reported **2 critical and 8 high** severity issues, and
+  `update.sh` was passing `--no-audit`, hiding all of them on every update. The
+  flag is gone.
+- **Baileys 6.7.21 → 6.17.16.** The pinned version carried a *critical* advisory:
+  message upsert / hist-sync spoofing and app-state corruption via a crafted
+  protocolMessage. `protobufjs` was on 7.5.5, which carries an arbitrary
+  code execution advisory. With overrides for protobufjs, ws, axios, sharp,
+  form-data, ip-address and fast-uri, the tree goes from 15 findings to 4 — none
+  critical, and all four fixable only by a 7.0.0 release candidate whose
+  remaining issues are in audio parsers this connector does not exercise.
+- `async-mutex` is now an explicit dependency; it was a transitive one that
+  6.17.x no longer pulls.
+- The Baileys imports are version-agnostic: the socket factory moved from default
+  to named export, and `proto` moved under `WAProto`. The first upgrade attempt
+  died on `makeWASocket is not a function`.
+
+### Fixed — a false positive of our own making
+- Decrypt failures within 3 minutes of a process start are recorded but no longer
+  vote on the drift verdict. Six controlled restarts during this upgrade produced
+  58 failures/hour and put the daemon into `DRIFT_DETECTED`, refusing sends, while
+  reception was demonstrably fine (48 messages in the following 10 minutes).
+  `WA_DECRYPT_GRACE_MS` tunes the window.
+
 ## [2.11.0] — 2026-09-07
 
 ### Changed

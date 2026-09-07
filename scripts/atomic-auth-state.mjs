@@ -29,7 +29,17 @@
 import { mkdir, readFile, rename, unlink, writeFile, stat } from 'fs/promises'
 import { join } from 'path'
 import { Mutex } from 'async-mutex'
-import { initAuthCreds, BufferJSON, proto } from '@whiskeysockets/baileys'
+import * as baileys from '@whiskeysockets/baileys'
+
+const { initAuthCreds, BufferJSON } = baileys
+// `proto` moved: it is a top-level export up to 6.7.x and lives under `WAProto`
+// from 6.17.x on. Resolve it from either rather than pinning this module to one
+// version — the whole point of borrowing Baileys' own types is that they keep
+// working when Baileys moves.
+const proto = baileys.proto ?? baileys.WAProto?.proto ?? baileys.WAProto
+if (!proto?.Message?.AppStateSyncKeyData) {
+  throw new Error('Cannot locate Baileys proto definitions; refusing to write auth state blindly')
+}
 
 const locks = new Map()
 const lockFor = (p) => {

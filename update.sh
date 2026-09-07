@@ -127,7 +127,7 @@ ok "Source files updated."
 
 if [ $NEED_NPM -eq 1 ]; then
   bold "Step 4/7: Updating npm dependencies (package-lock changed)"
-  (cd "$SCRIPTS_DIR" && npm install --silent --no-audit --no-fund) || {
+  (cd "$SCRIPTS_DIR" && npm install --silent --no-fund) || {
     err "npm install failed. Re-run after fixing network."
     exit 1
   }

@@ -17,14 +17,25 @@
  * com.whatsapp-connector.daemon).
  */
 
-import makeWASocket, {
+import * as baileys from '@whiskeysockets/baileys'
+
+// The socket factory moved: it is the default export up to 6.7.x and a named
+// export from 6.17.x on, where `default` became a namespace object. Resolving
+// it from all three shapes means a Baileys bump does not take the daemon down
+// with `makeWASocket is not a function` — which is exactly how the 6.17.16
+// upgrade failed on first attempt.
+const makeWASocket = baileys.makeWASocket ?? baileys.default?.default ?? baileys.default
+if (typeof makeWASocket !== 'function') {
+  throw new Error('Baileys socket factory not found — incompatible version?')
+}
+const {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
   isJidGroup,
   isJidStatusBroadcast,
   isJidNewsletter,
-} from '@whiskeysockets/baileys'
+} = baileys
 import pino from 'pino'
 import crypto from 'crypto'
 import fs from 'fs'
@@ -191,8 +202,29 @@ function jidBare(jid) {
 
 // Record a Signal decryption failure. This is the EARLIEST possible signal of
 // session drift — it fires within minutes, where inbound silence takes hours.
+// Failures in the first moments after a start are expected: WhatsApp re-delivers
+// a backlog encrypted with sessions that were mid-rotation when the process went
+// away. Counting those as drift means any maintenance restart blocks sending for
+// an hour — observed on 2026-09-07, when six controlled restarts during a Baileys
+// upgrade produced 58 failures/h and the daemon began refusing sends while
+// reception was demonstrably fine (41 messages in the following 15 minutes).
+// They are still recorded; they just do not vote on the drift verdict.
+const DECRYPT_GRACE_MS = Number(process.env.WA_DECRYPT_GRACE_MS || 180000)
+
 function pushDecryptFail(jid, reason) {
-  decryptFailRing.push({ ts: Date.now(), jid: jidBare(jid), reason: String(reason || 'unknown') })
+  const now = Date.now()
+  const grace = (now - new Date(startedAt).getTime()) < DECRYPT_GRACE_MS
+  decryptFailRing.push({ ts: now, jid: jidBare(jid), reason: String(reason || 'unknown'), grace })
+}
+
+// Steady-state rate: what the drift verdict is allowed to see.
+function countDecryptSteady(ms) {
+  const cutoff = Date.now() - ms
+  let n = 0
+  for (let i = decryptFailRing.length - 1; i >= 0 && decryptFailRing[i].ts >= cutoff; i--) {
+    if (!decryptFailRing[i].grace) n++
+  }
+  return n
 }
 
 // Prune both rings. Called from the heartbeat tick (every 10s), never from the
@@ -224,6 +256,7 @@ function inboundHealth() {
     inboundReal24h: inboundRing.length,
     inboundRealJids24h: new Set(inboundRing.map(e => e.jid)).size,
     decryptFail1h: countSince(decryptFailRing, 60 * 60 * 1000),
+    decryptFail1hSteady: countDecryptSteady(60 * 60 * 1000),
     decryptFail24h: decryptFailRing.length,
     daemonStartedAt: startedAt,
     disconnectedSince,
@@ -299,7 +332,8 @@ function _recomputeDaemonState(reason) {
 
   // Positive evidence that the Signal session is broken, in order of how fast
   // it becomes conclusive.
-  const decrypt1h = countSince(decryptFailRing, 60 * 60 * 1000)
+  // Steady-state only: post-restart renegotiation churn must not read as drift.
+  const decrypt1h = countDecryptSteady(60 * 60 * 1000)
   const inboundAge = lastInboundRealAt
     ? now - new Date(lastInboundRealAt).getTime()
     : null
@@ -457,7 +491,21 @@ function resolveFilePath(jid, displayName) {
     '---',
     `type: whatsapp-conversation`,
     `contact: "${displayName}"`,
-    isGroup ? `jid: "${jid}"` : `phone: "+${phone}"`,
+    // Record the AUTHORITATIVE jid for every conversation, not just groups.
+    //
+    // Until v2.12.0 only groups got `jid:`; everyone else got `phone: "+<digits>"`,
+    // which silently discarded the domain. WhatsApp identifies newer contacts with
+    // LIDs (privacy identifiers, ~14-16 digits) whose jid ends in @lid — so a LID
+    // contact was stored as a phone, and the index rebuilt it as
+    // <digits>@s.whatsapp.net: a number that does not exist. The daemon then logged
+    // "Outbound message sent + persisted" with no error while the message went
+    // nowhere. Measured on this vault: 822 of 1,659 conversation files had a
+    // recoverable jid that did not match what the index was inferring.
+    //
+    // `phone:` is still written for real phone numbers, because it is what makes a
+    // contact dialable and existing tooling reads it.
+    `jid: "${jid}"`,
+    ...(jid.endsWith('@s.whatsapp.net') ? [`phone: "+${phone}"`] : []),
     `message_count: 0`,
     `first_message: ${today}`,
     `last_message: ${today}`,
@@ -566,7 +614,20 @@ function loadState() {
       lastOutboundAt = raw.lastOutboundAt || null
       const cutoff = Date.now() - RING_WINDOW_MS
       for (const e of raw.inboundRing || []) if (e && e.ts > cutoff) inboundRing.push(e)
-      for (const e of raw.decryptFailRing || []) if (e && e.ts > cutoff) decryptFailRing.push(e)
+      // Backfill the grace flag on entries recorded before it existed, using the
+      // same rule new entries get: a failure within DECRYPT_GRACE_MS of a process
+      // start is renegotiation churn, not drift. Without this, an upgrade's own
+      // restarts keep the daemon in DRIFT_DETECTED — refusing sends — for a full
+      // hour after the upgrade succeeded. The rule is applied, not the verdict:
+      // entries outside that window keep counting.
+      const startMs = new Date(raw.startedAt || startedAt).getTime()
+      for (const e of raw.decryptFailRing || []) {
+        if (!e || e.ts <= cutoff) continue
+        if (e.grace === undefined) {
+          e.grace = Math.abs(e.ts - startMs) < DECRYPT_GRACE_MS
+        }
+        decryptFailRing.push(e)
+      }
       return
     } catch { /* corrupt — start fresh */ }
   }

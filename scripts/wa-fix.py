@@ -694,7 +694,12 @@ def run_checks() -> list[CheckResult]:
             "daemon does not publish decryptFail1h — cannot assess Signal health. "
             "Update the daemon."))
     else:
-        d1h = hb_dec.get("decryptFail1h", 0)
+        # Prefer the steady-state rate when the daemon publishes it: failures in
+        # the first moments after a restart are expected backlog renegotiation,
+        # not drift, and counting them turns every maintenance restart into a
+        # red doctor for an hour.
+        d1h = hb_dec.get("decryptFail1hSteady", hb_dec.get("decryptFail1h", 0))
+        d_raw = hb_dec.get("decryptFail1h", d1h)
         d24 = hb_dec.get("decryptFail24h", 0)
         if d1h >= DECRYPT_FAIL_1H:
             results.append(CheckResult(
@@ -716,7 +721,8 @@ def run_checks() -> list[CheckResult]:
         else:
             results.append(CheckResult(
                 PASS, "session-keys",
-                f"{d1h} decrypt failures in the last hour ({d24} in 24h)"))
+                f"{d1h} steady-state decrypt failures in the last hour "
+                f"({d_raw} including post-restart churn, {d24} in 24h)"))
 
     # 10b. Daemon state machine. The recovery skill instructs the agent to look
     # for `state: DRIFT_DETECTED`, but that string appeared nowhere in doctor's
