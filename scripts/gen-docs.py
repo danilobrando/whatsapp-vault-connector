@@ -53,6 +53,14 @@ if "--check" in sys.argv:
     missing = [n for n in names if f"`{n}`" not in readme]
     if missing:
         print("README is missing checks:", ", ".join(missing)); sys.exit(1)
-    print(f"README documents all {len(names)} checks."); sys.exit(0)
+    # Also catch hand-written counts elsewhere in the prose. Guarding only the
+    # generated table was not enough: a stray "17 checks" line survived three
+    # releases next to a generated "18 checks" one, which is exactly the drift
+    # this script claims to prevent.
+    stale = {m for m in re.findall(r"(\d+)\s+checks", readme) if int(m) != len(names)}
+    if stale:
+        print(f"README states {', '.join(sorted(stale))} checks; the code has {len(names)}.")
+        sys.exit(1)
+    print(f"README documents all {len(names)} checks, with no conflicting counts."); sys.exit(0)
 
 print(table)

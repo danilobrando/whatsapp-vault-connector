@@ -184,7 +184,7 @@ If you ever want to drive it yourself:
 ```bash
 WA="<vault>/connectors/whatsapp"
 
-python3 "$WA/wa-fix.py" doctor          # read-only, 17 checks
+python3 "$WA/wa-fix.py" doctor          # read-only diagnostic
 python3 "$WA/wa-fix.py" doctor --json   # verdict + escalate, for tooling
 python3 "$WA/wa-fix.py" fix             # diagnose, then auto-repair what it can
 python3 "$WA/wa-fix.py" repair          # full re-pair — needs your phone, ~6 min
