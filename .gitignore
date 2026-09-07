@@ -11,6 +11,7 @@ scripts/.message_store.json
 scripts/.message_store.json.tmp
 scripts/logs/
 scripts/wa-fix.log.jsonl
+scripts/audit.jsonl
 
 # Node
 scripts/node_modules/

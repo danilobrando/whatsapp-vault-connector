@@ -26,21 +26,37 @@ I am one person; expect a first response within a week, not a day.
   reports looseness as `FAIL`, not a warning.
 - Re-pair backups are created `0700` and excluded from Time Machine, and only the
   two most recent are retained.
+- **The Signal auth store is written atomically** (temp file + `rename`), so a
+  hard kill during a key write cannot leave a corrupt credential whose only
+  recovery is a full re-pair. Temp files from a previous kill are swept at start.
+- **Every outbound send is recorded** in `audit.jsonl`, with a digest rather than
+  the message body.
 - A `pre-commit` hook blocks real phone numbers and JIDs from entering the repo.
 
 ## Known gaps
 
-Stated plainly rather than left for you to discover:
+Stated plainly rather than left for you to discover.
 
-- **The IPC socket does not authenticate its peer.** Any process running as your
-  user can send WhatsApp messages through it. The `0700` directory is the only
-  boundary. A peer-uid check needs a native addon and is not implemented.
-- **The Baileys auth store is not written atomically.** A hard kill during a key
-  write can corrupt it; recovery is a re-pair. The watchdog sends `SIGTERM` and
-  waits before escalating, which makes this unlikely, not impossible.
-- **No audit log of who asked for a send.** The daemon logs that a message was
-  sent, not which local process requested it.
-- **Conversation markdown is never encrypted at rest.**
+**The IPC socket does not authenticate its peer, and cannot.** Node exposes no
+way to read a Unix socket's peer uid without a native addon, and any token we
+invented would be readable by the same processes we would be trying to exclude —
+so a token here would be theatre, and we do not ship it. The `0700` run
+directory is the real boundary: anything running as your user can send WhatsApp
+messages through the socket.
+
+What exists instead is attribution. Every send attempt is appended to
+`audit.jsonl` (mode `0600`) with the caller's self-reported label, the target, a
+byte count and an 8-char digest — **never the message body**. The
+`send-provenance` check reports any traffic from callers you did not expect, so
+an unfamiliar sender surfaces in `doctor` instead of going unnoticed. Set
+`WA_EXPECTED_SEND_CLIENTS` to your own comma-separated list.
+
+A label is not proof: anything can claim to be the MCP server. It is a trail,
+not a gate. If you need a gate, do not give shell access on this machine to
+anyone you would not hand your phone to.
+
+**No message content is recoverable from the audit log**, by design. If you need
+to know what was said, that is the vault.
 
 ## Not a vulnerability
 

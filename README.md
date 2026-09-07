@@ -257,11 +257,12 @@ code. Run `python3 scripts/gen-docs.py --check` to verify.
 | `daemon-state` | `repair` — needs your phone |
 | `key-inventory` | `repair` — needs your phone |
 | `alert-channel` | reported, manual |
+| `send-provenance` | reported, manual |
 | `stability` | reported, manual |
 | `code-identity` | reported, manual |
 | `msgstore` | reported, manual |
 
-17 checks. `inbound-freshness` runs first and is the only one that can veto a healthy verdict.
+18 checks. `inbound-freshness` runs first and is the only one that can veto a healthy verdict.
 
 `python3 wa-fix.py doctor --json` returns a `verdict` and an `escalate` field
 (`none` / `fix` / `repair`) so tooling reads a decision instead of parsing
@@ -298,6 +299,7 @@ phone, `3` aborted, `4` hard error.
 │   ├── send.mjs / send-document.mjs              # standalone send helpers
 │   ├── download_wa_photo.mjs                     # contact photo helper
 │   ├── wa-fix.py                                 # self-healing doctor + fix
+│   ├── atomic-auth-state.mjs                     # crash-safe Signal key writes
 │   ├── wa-watchdog.sh                            # 60s liveness + reception detector
 │   ├── gen-docs.py                               # regenerates the check table
 │   ├── hooks/pre-commit                          # blocks real numbers from commits

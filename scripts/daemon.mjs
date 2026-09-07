@@ -26,6 +26,7 @@ import makeWASocket, {
   isJidNewsletter,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
+import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import net from 'net'
@@ -57,6 +58,7 @@ const LOCK_FILE = path.join(__dir, '.daemon.lock')
 // only access control there is. /tmp is mode 1777 — every user and every
 // process on the machine can reach a socket there. A private run directory
 // under the connector is the containment boundary.
+const AUDIT_FILE = path.join(__dir, 'audit.jsonl')
 const RUN_DIR = path.join(__dir, '.run')
 const SOCKET_PATH = process.env.WA_SOCKET_PATH || path.join(RUN_DIR, 'daemon.sock')
 const LEGACY_SOCKET_PATH = '/tmp/whatsapp-daemon.sock'
@@ -144,6 +146,34 @@ const decryptFailRing = []     // [{ts, jid, reason}] Signal failures, pruned to
 const RING_WINDOW_MS = 24 * 60 * 60 * 1000
 
 // Bare number/id of a jid: "15551234567@s.whatsapp.net" -> "15551234567"
+// Append-only forensic trail for every outbound attempt.
+//
+// The IPC socket accepts `send` from any process running as this user — that is
+// a documented limit, not something a token can fix, since the same process
+// could read any token we wrote. What we CAN do is make every send
+// attributable after the fact: what went where, when, at whose request, and
+// whether it succeeded.
+//
+// The message body is never recorded — only its length and an 8-char digest, so
+// a specific message can be confirmed or ruled out without the audit log
+// becoming a second copy of the user's conversations.
+function audit(event, fields) {
+  try {
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      event,
+      ...fields,
+    }) + '\n'
+    fs.appendFileSync(AUDIT_FILE, line, { mode: 0o600 })
+  } catch { /* auditing must never break the send path */ }
+}
+
+function bodyDigest(text) {
+  try {
+    return crypto.createHash('sha256').update(String(text ?? '')).digest('hex').slice(0, 8)
+  } catch { return null }
+}
+
 function jidBare(jid) {
   return String(jid || '').split('@')[0].split(':')[0]
 }
@@ -814,7 +844,18 @@ async function handleIPCCommand(raw, conn) {
   }
 
   if (cmd.cmd === 'send') {
+    // `client` is self-reported and therefore not a credential — it is a label
+    // so the trail can tell the MCP server apart from a script or from
+    // something unexpected. Unlabelled sends record as 'unknown', which is
+    // itself worth noticing.
+    const auditBase = {
+      client: typeof cmd.client === 'string' ? cmd.client.slice(0, 64) : 'unknown',
+      to: String(cmd.to ?? '').slice(0, 96),
+      bytes: Buffer.byteLength(String(cmd.text ?? '')),
+      sha8: bodyDigest(cmd.text),
+    }
     if (!sock || !connected) {
+      audit('send.rejected', { ...auditBase, reason: 'not-connected' })
       conn.write(JSON.stringify({ ok: false, error: 'WhatsApp not connected' }) + '\n')
       return
     }
@@ -831,6 +872,7 @@ async function handleIPCCommand(raw, conn) {
                'Run `python3 wa-fix.py repair` to re-pair and reset Signal sessions.',
         state: daemonState,
       }) + '\n')
+      audit('send.blocked', { ...auditBase, reason: 'drift-detected' })
       return
     }
     const resolved = cmd.jid
@@ -841,6 +883,7 @@ async function handleIPCCommand(raw, conn) {
         }
       : resolveContact(cmd.to)
     if (!resolved) {
+      audit('send.rejected', { ...auditBase, reason: 'contact-not-found' })
       conn.write(JSON.stringify({ ok: false, error: `Contact or group "${cmd.to}" not found` }) + '\n')
       return
     }
@@ -865,6 +908,8 @@ async function handleIPCCommand(raw, conn) {
         const ts = Math.floor(Date.now() / 1000)
         appendMessage(resolved.jid, SENDER_NAME, cmd.text, ts)
         lastOutboundAt = new Date().toISOString()
+        audit('send.ok', { ...auditBase, jid: jidBare(resolved.jid),
+                           kind: resolved.kind, msgId: sentMsg?.key?.id })
         logger.info({
           jid: resolved.jid.split('@')[0],
           msgId: sentMsg?.key?.id,
@@ -972,7 +1017,25 @@ async function _connect() {
   // Create the directory ourselves with an explicit mode; Baileys would create
   // it with whatever the ambient umask allows.
   fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o700 })
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
+
+  // Atomic auth store. Baileys writes the Signal key files with a plain
+  // writeFile; a kill landing mid-write leaves a corrupt credential whose only
+  // recovery is a full QR re-pair — and killing a wedged daemon is precisely
+  // the watchdog's job. Our replacement owns only the I/O and borrows Baileys'
+  // own credential shape, so it cannot silently diverge from upstream. If it
+  // fails to load for any reason, fall back rather than refuse to start: a
+  // connector that runs with the stock writer beats one that does not run.
+  let state, saveCreds
+  try {
+    const atomic = await import('./atomic-auth-state.mjs')
+    const cleaned = await atomic.cleanupAuthTemps(AUTH_DIR)
+    if (cleaned) logger.warn({ cleaned }, 'Removed auth temp files left by a previous hard kill')
+    ;({ state, saveCreds } = await atomic.useAtomicMultiFileAuthState(AUTH_DIR))
+    logger.info('Auth store: atomic writer')
+  } catch (err) {
+    logger.error({ err }, 'Atomic auth writer unavailable; falling back to the stock one')
+    ;({ state, saveCreds } = await useMultiFileAuthState(AUTH_DIR))
+  }
   const { version } = await fetchLatestBaileysVersion()
 
   // Load contacts ONCE, not on every reconnect. This file is ~316 MB; parsing

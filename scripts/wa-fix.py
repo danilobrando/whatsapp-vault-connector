@@ -63,6 +63,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DAEMON_LABEL = os.environ.get("WHATSAPP_DAEMON_LABEL", "com.whatsapp-connector.daemon")
 WATCHDOG_LABEL = os.environ.get("WHATSAPP_WATCHDOG_LABEL", "com.whatsapp-connector.watchdog")
 HEARTBEAT_FILE = SCRIPT_DIR / ".daemon_heartbeat"
+AUDIT_FILE = SCRIPT_DIR / "audit.jsonl"
 
 def _sensitive_paths() -> list[Path]:
     """Everything holding secrets or message content, not just baileys_auth/.
@@ -810,6 +811,61 @@ def run_checks() -> list[CheckResult]:
                 "Then prove it works before you need it:",
                 "    bash wa-watchdog.sh --test-alert",
             ]))
+
+    # 10e. Who has been sending?
+    #
+    # The IPC socket cannot authenticate its peer: Node exposes no way to read a
+    # Unix socket's peer uid without a native addon, and any process running as
+    # this user could read a token we invented, so a token would be theatre. The
+    # 0700 run directory is the real boundary, and within one uid there is none.
+    #
+    # What we can do is make it VISIBLE. Every send is recorded with the label
+    # its caller reported, so traffic from anything other than the expected
+    # clients surfaces here instead of going unnoticed. A label is not proof —
+    # anything can claim to be the MCP server — but a process that sends without
+    # bothering to label itself, or labels itself something new, is exactly what
+    # you would want to be told about.
+    expected = {c.strip() for c in os.environ.get(
+        "WA_EXPECTED_SEND_CLIENTS", "mcp-server,wa-fix,watchdog").split(",") if c.strip()}
+    if not AUDIT_FILE.is_file():
+        results.append(CheckResult(PASS, "send-provenance", "no outbound sends recorded yet"))
+    else:
+        cutoff = datetime.now(timezone.utc).timestamp() - 24 * 3600
+        counts: dict[str, int] = {}
+        try:
+            with AUDIT_FILE.open(encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    try:
+                        rec = json.loads(line)
+                        if not str(rec.get("event", "")).startswith("send."):
+                            continue
+                        ts = datetime.fromisoformat(
+                            str(rec["ts"]).replace("Z", "+00:00")).timestamp()
+                        if ts >= cutoff:
+                            counts[rec.get("client") or "unknown"] = \
+                                counts.get(rec.get("client") or "unknown", 0) + 1
+                    except (ValueError, KeyError, TypeError):
+                        continue
+        except OSError:
+            counts = {}
+        unexpected = {k: v for k, v in counts.items() if k not in expected}
+        total = sum(counts.values())
+        if unexpected:
+            detail = ", ".join(f"{k}={v}" for k, v in sorted(unexpected.items()))
+            results.append(CheckResult(
+                WARN, "send-provenance",
+                f"{sum(unexpected.values())} of {total} sends in 24h came from unexpected "
+                f"callers ({detail}). Anything running as you can use the socket; this is "
+                f"how you find out. If it is yours, add it to WA_EXPECTED_SEND_CLIENTS.",
+                fix_manual=[
+                    f"Inspect the trail:  tail -50 '{AUDIT_FILE}'",
+                    "Message bodies are never recorded — only a length and an 8-char digest.",
+                ]))
+        else:
+            results.append(CheckResult(
+                PASS, "send-provenance",
+                f"{total} send(s) in 24h, all from expected callers"
+                + (f" ({', '.join(sorted(counts))})" if counts else "")))
 
     # 11. Disconnect stability. Tuned 2026-05-29 after observing 4 disconnects/hr
     # was enough to cause user-visible drift ("waiting for this message" on the

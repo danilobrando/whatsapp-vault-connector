@@ -354,7 +354,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
     try {
-      const resp = await sendToDaemon({ cmd: 'send', jid: resolved.jid, text: args.message })
+      // Label the request so the daemon's audit trail can attribute it. Not a
+      // credential — any process can claim any label — but it distinguishes
+      // routine agent traffic from something unexpected when reading the log.
+      const resp = await sendToDaemon({ cmd: 'send', jid: resolved.jid, text: args.message,
+                                        client: 'mcp-server' })
       if (resp.ok) {
         const tag = resolved.kind === 'group' ? 'group' : 'contact'
         return { content: [{ type: 'text', text: `Message sent to ${tag} ${resolved.displayName} (${resolved.jid})` }] }

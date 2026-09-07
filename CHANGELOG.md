@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [2.10.0] — 2026-09-07
+
+The three security gaps `SECURITY.md` had been declaring. Two are closed; the
+third cannot be closed and is now stated as a permanent limit with detection
+built around it instead.
+
+### Added
+- **Atomic Signal auth store.** Baileys writes key files with a plain
+  `writeFile`, so a kill landing mid-write leaves a corrupt credential whose
+  only recovery is a full QR re-pair — and killing a wedged daemon is exactly
+  what the watchdog does. `atomic-auth-state.mjs` writes to a temp file and
+  renames, and sweeps temps left by a previous hard kill. It owns only the I/O:
+  credential shape, serialisation and protobuf decoding remain Baileys' own, and
+  if it fails to load the daemon falls back to the stock writer rather than
+  refusing to start. Verified byte-identical reads against a live auth store.
+- **`audit.jsonl`** (mode `0600`): every outbound attempt — accepted, rejected or
+  blocked — recorded with the caller's self-reported label, the target, a byte
+  count and an 8-char digest. **The message body is never written**, so the trail
+  cannot become a second copy of your conversations.
+- **`send-provenance` check** (18 checks now). Reports sends from callers you did
+  not expect; configure with `WA_EXPECTED_SEND_CLIENTS`.
+
+### Changed
+- `SECURITY.md` now says the IPC socket **cannot** authenticate its peer, rather
+  than implying a fix is pending. Node exposes no way to read a Unix socket's
+  peer uid without a native addon, and any token would be readable by the very
+  processes it would need to exclude — so no token is shipped. The `0700` run
+  directory is the boundary; attribution and detection are what stand in for a
+  gate that is not available.
+
 ## [2.9.1] — 2026-09-07
 
 ### Changed
