@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+NOTE ON DEPENDENCIES
+
+The MIT terms above cover this project's own source code. They do not cover its
+dependencies. This software requires libsignal (@whiskeysockets/libsignal-node),
+which is licensed GPL-3.0, at runtime; a work you distribute that combines the
+two is subject to that licence's terms. See THIRD-PARTY-LICENSES.md.

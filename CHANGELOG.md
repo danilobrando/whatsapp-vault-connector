@@ -5,6 +5,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [2.11.0] — 2026-09-07
+
+### Changed
+- **The MIT badge is no longer unqualified.** This connector cannot run without
+  `libsignal` (`@whiskeysockets/libsignal-node`), which is **GPL-3.0** and is a
+  required runtime dependency of Baileys — it is the Signal Protocol
+  implementation. Baileys is itself published as MIT while depending on it; the
+  tension is inherited, not introduced here. An unqualified MIT badge told
+  adopters something false about what they get when they install this.
+
+  This project's own code stays MIT, which is accurate. The README, `LICENSE`
+  and a new **`THIRD-PARTY-LICENSES.md`** now say plainly that running it
+  carries no obligation, and that shipping a product built on it is a different
+  question because the combined work contains GPL-3.0 code.
+
+### Added
+- **`scripts/gen-licenses.py`** generates the inventory from the installed tree.
+  A hand-written license list goes stale on the first dependency bump, and a
+  stale one is worse than none — it tells an adopter something false about their
+  obligations. `--check` fails when a copyleft or undeclared dependency appears
+  that the document does not disclose.
+
+### Fixed
+- `gen-docs.py --check` now catches hand-written check counts anywhere in the
+  README, not just the generated table. A stray "17 checks" line survived three
+  releases beside a generated "18 checks" one — exactly the drift that script
+  exists to prevent.
+
 ## [2.10.1] — 2026-09-07
 
 ### Added

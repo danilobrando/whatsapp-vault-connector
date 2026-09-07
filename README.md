@@ -352,7 +352,21 @@ On your phone also remove the linked device: WhatsApp → Settings → Linked De
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+This project's own code is **MIT**. See [LICENSE](LICENSE).
+
+**But read this before you build on it.** The connector cannot run without
+`libsignal` (`@whiskeysockets/libsignal-node`), which is **GPL-3.0** and is a
+required runtime dependency of Baileys — it is the Signal Protocol
+implementation, so there is no version of this that works without it. Baileys is
+itself published as MIT while depending on it; the tension is inherited, not
+introduced here.
+
+Running it yourself carries no obligation — copyleft attaches to distribution,
+not use. **Shipping a product built on this is a different question**: the
+combined work you would distribute contains GPL-3.0 code. If that matters to
+you, read [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and take advice
+before you ship. An MIT badge on this repository describes its own source, not
+the licence of everything you get when you install it.
 
 ## Acknowledgements
 
