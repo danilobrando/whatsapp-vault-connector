@@ -199,18 +199,23 @@ else:
     except Exception: print(-1)" 2>/dev/null || echo -1)"
 
 VERDICT="HEALTHY"; FAIL_KEYS=""
+# The key is the DEDUPLICATION fingerprint, not the message. It must never carry
+# a changing magnitude: on 2026-09-07 the decrypt-failure key embedded its own
+# counter ("descifrado-79/h", "-81/h", "-82/h"...), so every tick looked like a
+# new situation, bypassed the 6h cooldown, and sent 27 emails in one evening for
+# a single ongoing condition. Magnitudes belong in the body.
 add_fail() { FAIL_KEYS="${FAIL_KEYS}${1},"; VERDICT="DEAF"; }
 
 if [ "${WA_FORCE_VERDICT:-}" = "DEAF" ]; then
   add_fail "forced-test"
 elif [ "$SUPPRESS_DEAF" -eq 0 ]; then
-  awk -v a="$IN_AGE_H" -v d="$DEAF_HOURS" 'BEGIN{exit !(a>=0 && a>=d)}' && add_fail "sin-entrantes-${IN_AGE_H}h"
-  [ "$DECFAIL" -ge "$DECRYPT_FAIL_1H" ] && add_fail "descifrado-${DECFAIL}/h"
+  awk -v a="$IN_AGE_H" -v d="$DEAF_HOURS" 'BEGIN{exit !(a>=0 && a>=d)}' && add_fail "sin-entrantes"
+  [ "$DECFAIL" -ge "$DECRYPT_FAIL_1H" ] && add_fail "descifrado-alto"
   if [ "$WINDOW_OK" = "True" ] && [ "$JIDS" -lt 3 ]; then
-    awk -v a="$IN_AGE_H" 'BEGIN{exit !(a>=9)}' && add_fail "solo-${JIDS}-contactos-24h"
+    awk -v a="$IN_AGE_H" 'BEGIN{exit !(a>=9)}' && add_fail "pocos-contactos"
   fi
 fi
-[ "$KICKSTARTS_24H" -ge "$KICKSTART_BUDGET" ] && { FAIL_KEYS="${FAIL_KEYS}reinicios-${KICKSTARTS_24H}/24h,"; [ "$VERDICT" = "HEALTHY" ] && VERDICT="THRASHING"; }
+[ "$KICKSTARTS_24H" -ge "$KICKSTART_BUDGET" ] && { FAIL_KEYS="${FAIL_KEYS}reinicios-altos,"; [ "$VERDICT" = "HEALTHY" ] && VERDICT="THRASHING"; }
 
 # ── Job 3: health line, every run, no exceptions ─────────────────────────────
 python3 - "$HEALTH_LOG" "$VERDICT" "$LAST_IN" "$JIDS" "$DECFAIL" "$KICKED" "$REASON" "$KICKSTARTS_24H" "$IN_AGE_H" "${FAIL_KEYS%,}" <<'PYEOF' 2>/dev/null

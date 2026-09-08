@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [2.12.1] — 2026-09-07
+
+### Fixed
+- **The alert dedup key carried its own counter, so the cooldown never applied.**
+  Keys looked like `descifrado-79/h`, `-81/h`, `-82/h`: every tick of the counter
+  read as a new situation, bypassed the 6-hour cooldown, and sent **27 emails in
+  one evening for a single ongoing condition**. The key is a deduplication
+  fingerprint, not a message — magnitudes belong in the body and now stay there.
+  The same bug affected the inbound-silence, contact-count and restart-count keys.
+
 ## [2.12.0] — 2026-09-07
 
 Two live risks a comparison against other WhatsApp connectors surfaced, plus the
