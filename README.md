@@ -4,7 +4,7 @@ Keep a WhatsApp session alive on your Mac, write every conversation into your
 Obsidian vault as markdown, and let Claude Code read and send messages through
 it — with a health layer that tells you when it breaks instead of failing quietly.
 
-By [Danny Bravo](https://github.com/danilobrando) · MIT · **v2.6.0 — alpha**
+By [Danny Bravo](https://github.com/danilobrando) · MIT · **v3.0.0 — macOS alpha · Windows read-only**
 
 ```
    your phone ──QR──▶ ┌─────────────────────────────────────────┐
@@ -51,7 +51,9 @@ within hours instead of weeks and tell you. See [Why the health layer exists](#w
 ## What it does not do
 
 - Not a bot framework, and no auto-replies. It writes what arrives and sends what you ask.
-- No Windows or Linux support. It uses `launchd`, so macOS only.
+- **On Windows it is read-only.** The Windows artifact links, reads and writes a
+  tray; it cannot send. Sending is macOS-only for now. Linux is not supported on
+  either path.
 - No multi-account support. One WhatsApp number per install.
 - No media download beyond a helper script. Images and audio are recorded as
   `[Image]` / `[Audio]` placeholders in the markdown.
@@ -164,6 +166,42 @@ bash ~/whatsapp-vault-connector/update.sh
 
 It preserves your settings — display name, timezone, filename suffix and alert
 configuration are read back out of the existing plists, not asked again.
+
+## Windows 10/11 (read-only)
+
+The connector also runs on Windows 10/11 **without administrator rights**, as a
+read-only artifact. It pairs with a QR or a phone pairing code, reads
+conversations, and writes them to a tray in WhatsApp's Spanish export format. It
+**cannot send** — there is no send command, no `whatsapp_send` tool and no
+reachable `sendMessage`, and the build fails if one reappears.
+
+- **Node:** the official `win-x64` zip, pinned by version and SHA-256 in
+  [`windows/NODE-VERSION`](windows/NODE-VERSION). Nothing is installed machine-wide.
+- **State:** everything lives under `%LOCALAPPDATA%\System3\whatsapp\3.0.0\`.
+- **Scheduling:** not in the connector. It offers `run` (foreground) and `stop`;
+  the product's launcher owns the schedule.
+
+```bat
+:: unpack the artifact and portable Node under %LOCALAPPDATA%\System3\whatsapp\3.0.0\
+node cli.mjs version
+node cli.mjs link --code 57300XXXXXXX
+node cli.mjs allow --set allow.json
+node cli.mjs sync-once --bandeja "%USERPROFILE%\vault\whatsapp-tray"
+node cli.mjs status --json
+node cli.mjs logout
+```
+
+Exit codes: `0` ok · `2` usage · `3` not linked · `4` no network · `5` invalid
+session · `10` internal.
+
+Build and verify the artifact (on any machine with the repo checked out):
+
+```bash
+cd scripts && npm install --omit=optional
+node build-win-readonly.mjs          # writes windows/whatsapp-connector-win-readonly-v3.0.0.zip (+ .sha256)
+node check-readonly.mjs ../windows/whatsapp-connector-win-readonly-v3.0.0.zip
+node --test                          # the test suite, including the read-only negative test
+```
 
 ## Pairing
 

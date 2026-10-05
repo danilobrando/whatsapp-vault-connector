@@ -5,6 +5,51 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [3.0.0] — 2026-10-05
+
+The Windows port. The connector now also runs on Windows 10/11 **without
+administrator rights** — but as a **read-only** artifact: it links, reads and
+writes conversations to a tray in WhatsApp's own Spanish export format. It
+cannot send. The macOS connector is unchanged in behaviour.
+
+### Added — Windows only
+- **Portable-Node install.** Runs on the official `win-x64` Node zip, pinned by
+  version and SHA-256 in [`windows/NODE-VERSION`](windows/NODE-VERSION). No
+  administrator, no Windows service, no scheduled task, no machine registry
+  key; all state lives under `%LOCALAPPDATA%\System3\whatsapp\<version>\`.
+- **Control contract** (`node cli.mjs <command>`): `version`, `link --qr`,
+  `link --code <phone>`, `chats --json`, `allow --set <file>`, `status --json`,
+  `run`, `stop`, `sync-once`, `logout`, `uninstall --yes`. Exit codes are part
+  of the contract: `0` ok · `2` usage · `3` not linked · `4` no network ·
+  `5` invalid session · `10` internal.
+- **Read-only artifact** `whatsapp-connector-win-readonly-v3.0.0.zip`, built by
+  `scripts/build-win-readonly.mjs`. It carries production dependencies already
+  resolved (without `sharp`), a `.sha256`, and is reproducible: sorted entries,
+  fixed timestamps and stored compression make two builds hash identically.
+- **`scripts/check-readonly.mjs`** asserts the artifact has no send surface — no
+  `send*.mjs`, no IPC `send`, no `whatsapp_send`, no reachable `sendMessage(` —
+  and fails on an injected `send.mjs` rather than passing vacuously.
+- **Tray format**: one `.txt` per permitted chat in the Spanish export format
+  (`dd/mm/aa, hh:mm - Nombre: mensaje`), documents written beside the chat as
+  `<8-digit index>-<name>`, every other attachment as `<adjunto omitido>`, and a
+  `contrato.json` with `{"contrato":1,"origen":"whatsapp-vault-connector",
+  "version":"3.0.0"}`. Only allow-listed chats are written, atomically.
+- **Scheduling is not in the connector.** It offers `run` (foreground) and
+  `stop`; the product's launcher owns the schedule.
+
+### Security
+- **Baileys `6.17.16` → `6.7.24`.** v2.12.0 pinned `6.17.16` believing it
+  carried the fix for GHSA-qvv5-jq5g-4cgg. It does not: npm still marks
+  `6.17.16` as affected and the package itself is deprecated with that advisory.
+  The fix lives on the `6.7.x` line (`>= 6.7.22`) and in `7.0.0-rc12`. Pinned to
+  exactly `6.7.24` — an exact pin, because a caret range would resolve back up
+  to the affected `6.17.16`. `npm audit` is clean.
+
+### Unchanged — macOS
+- The daemon, watchdog, `wa-fix.py`, the MCP server and the installer are
+  untouched. Sending from the personal macOS install still works exactly as
+  before; the read-only restriction applies to the Windows artifact only.
+
 ## [2.12.1] — 2026-09-07
 
 ### Fixed

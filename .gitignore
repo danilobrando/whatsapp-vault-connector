@@ -38,3 +38,9 @@ scripts/.wa-mute
 scripts/.wa-watchdog-last-run
 scripts/.wa-woke-at
 scripts/.pre-hardening-backup-*/
+
+# Windows read-only build artifacts (large; rebuilt from source, never committed)
+windows/whatsapp-connector-win-readonly-*.zip
+windows/whatsapp-connector-win-readonly-*.zip.sha256
+windows/evidencia/
+

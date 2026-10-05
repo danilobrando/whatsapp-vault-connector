@@ -7,15 +7,14 @@ tree. Do not edit by hand — regenerate it.
 
 | License | Packages |
 |---|---:|
-| MIT | 133 |
-| BSD-3-Clause | 17 |
-| ISC | 10 |
-| Apache-2.0 | 5 |
+| MIT | 157 |
+| ISC | 17 |
+| BSD-3-Clause | 15 |
+| Apache-2.0 | 3 |
 | UNDECLARED | 1 |
 | 0BSD | 1 |
 | GPL-3.0 | 1 |
 | BSD-2-Clause | 1 |
-| LGPL-3.0-or-later | 1 |
 | Apache 2.0 | 1 |
 
 ## Dependencies that carry obligations
@@ -23,8 +22,7 @@ tree. Do not edit by hand — regenerate it.
 These are the ones that change what you may do with a combined work.
 Everything else in the tree is permissive (MIT, BSD, ISC, Apache-2.0).
 
-- **`@img/sharp-libvips-darwin-arm64` 1.2.4 — LGPL-3.0-or-later**
-- **`@whiskeysockets/libsignal-node` 2.0.1 — GPL-3.0**
+- **`libsignal` 6.0.0 — GPL-3.0**
 - **`transport` 0.0.1 — UNDECLARED**
 
 ## What this means for you
@@ -34,11 +32,11 @@ building is a question for your own counsel.
 
 ### `libsignal` (GPL-3.0) — the one that matters
 
-`@whiskeysockets/libsignal-node` implements the Signal Protocol. It is a
-**required runtime dependency**: Baileys pulls it in `dependencies` and uses it
-across its Signal layer, so this connector cannot encrypt or decrypt a single
-message without it. Baileys itself is published as MIT while depending on it;
-that tension is inherited here, not created here.
+`libsignal` implements the Signal Protocol. It is a **required runtime
+dependency**: Baileys pulls it in and uses it across its Signal layer, so this
+connector cannot encrypt or decrypt a single message without it. Baileys itself
+is published as MIT while depending on it; that tension is inherited here, not
+created here.
 
 - **Using this on your own machine**: no obligation. Copyleft attaches to
   *distribution*, not to use.
@@ -55,12 +53,21 @@ implementation does, [whatsmeow](https://github.com/tulir/whatsmeow) (Go) is
 MPL-2.0 — file-level copyleft, far weaker, and explicitly designed to be
 combined with differently-licensed larger works.
 
-### `@img/sharp-libvips-*` (LGPL-3.0-or-later)
+### `codec-parser` (LGPL-3.0-or-later)
 
-A **peer** dependency of Baileys, used for media processing. This connector does
-not import `sharp` anywhere, and npm does not install peer dependencies
-automatically. If your install does not have it, it is not in your combined
-work; if you add it, LGPL is satisfied by dynamic linking in normal use.
+A transitive dependency of some Baileys audio paths (`music-metadata`). This
+connector never parses audio — the read-only tray records audio as an omitted
+attachment — so where it is present in the tree it is not exercised, and
+depending on the resolved Baileys version it may not be present at all. It is
+named here because an adopter auditing the combined work should know it can
+enter the tree; LGPL is satisfied by dynamic linking in normal use.
+
+### `sharp` and `@img/*` (Apache-2.0 / LGPL for the libvips bindings)
+
+A **peer** dependency of Baileys, used for image processing. The connector does
+not import `sharp`, and the Windows read-only artifact **excludes** it and its
+native `@img/*` binaries at build time. If it is absent, it is not in your
+combined work.
 
 ### `transport` (no declared license)
 
