@@ -11,6 +11,7 @@
  * copied here; this file is what `status --json` reads.
  */
 import { readJson, writeJsonAtomic } from './fsutil.mjs'
+import path from 'path'
 import { VERSION } from './contract.mjs'
 
 export function emptyState() {
@@ -31,7 +32,7 @@ export function readState(stateFile) {
 }
 
 export function writeState(stateFile, state) {
-  writeJsonAtomic(stateFile, state)
+  writeJsonAtomic(stateFile, state, { tempRoot: path.join(path.dirname(stateFile), '.tmp') })
 }
 
 /**

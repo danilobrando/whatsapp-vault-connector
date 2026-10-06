@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -16,11 +17,22 @@ const CLEAN = [
   { name: 'package.json', data: Buffer.from('{"version":"3.0.0"}\n') },
   // Baileys itself defines sendMessage; the content scan is scoped so this is fine.
   { name: 'node_modules/@whiskeysockets/baileys/lib/index.js', data: Buffer.from('function sendMessage(jid, msg) {}\n') },
+  // Legitimate third-party sender*.js files are positive cases, not violations.
+  { name: 'node_modules/ws/lib/sender.js', data: Buffer.from('class Sender {}\n') },
+  { name: 'node_modules/ws/lib/sender-queue.js', data: Buffer.from('export const senderQueue = true\n') },
 ]
+
+function withManifest(entries) {
+  const lines = entries
+    .filter((entry) => entry.name.startsWith('node_modules/'))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((entry) => `${crypto.createHash('sha256').update(entry.data).digest('hex')}  ${entry.name.slice('node_modules/'.length)}`)
+  return [...entries, { name: 'node_modules/.readonly-manifest.sha256', data: Buffer.from(lines.join('\n') + '\n') }]
+}
 
 function zipTo(entries) {
   const file = path.join(tmp(), 'artifact.zip')
-  fs.writeFileSync(file, writeZip(entries))
+  fs.writeFileSync(file, writeZip(withManifest(entries)))
   return file
 }
 
@@ -37,6 +49,14 @@ test('fails when send.mjs is injected (negative test)', () => {
   assert.match(result.findings.join('\n'), /forbidden file: win\/send\.mjs/)
 })
 
+test('fails on each forbidden production filename extension', () => {
+  for (const name of ['win/send.js', 'win/send-helper.cjs', 'win/send_helper.mjs']) {
+    const result = checkReadonly(zipTo([...CLEAN, { name, data: Buffer.from('export const forbidden = true\n') }]))
+    assert.equal(result.ok, false, name)
+    assert.match(result.findings.join('\n'), /forbidden file/)
+  }
+})
+
 test('fails when the connector gains a reachable sendMessage call', () => {
   const file = zipTo([...CLEAN, { name: 'win/lib/leak.mjs', data: Buffer.from('await sock.sendMessage(jid, { text })\n') }])
   const result = checkReadonly(file)
@@ -49,6 +69,13 @@ test('fails when the whatsapp_send tool or IPC send reappears', () => {
   const result = checkReadonly(file)
   assert.equal(result.ok, false)
   assert.match(result.findings.join('\n'), /whatsapp_send|IPC send/)
+})
+
+test('fails when the test-only adapter hook reappears in production', () => {
+  const file = zipTo([...CLEAN, { name: 'win/lib/hook.mjs', data: Buffer.from('const hook = "WA_WIN_ADAPTER"\n') }])
+  const result = checkReadonly(file)
+  assert.equal(result.ok, false)
+  assert.match(result.findings.join('\n'), /WA_WIN_ADAPTER/)
 })
 
 test('fails on an empty archive instead of passing vacuously', () => {

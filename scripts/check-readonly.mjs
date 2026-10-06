@@ -22,16 +22,49 @@
  * pass as "clean" by having nothing to find.
  */
 import fs from 'fs'
+import crypto from 'crypto'
 import { readZip } from './lib/zip.mjs'
 
-const FORBIDDEN_FILE = /(^|\/)send[a-z-]*\.mjs$/i
+const FORBIDDEN_FILE = /(^|\/)send(?:[-_].+)?\.(?:js|mjs|cjs)$/i
 const FORBIDDEN_CONTENT = [
   { label: 'whatsapp_send tool', re: /whatsapp_send/ },
+  { label: 'WA_WIN_ADAPTER hook', re: /WA_WIN_ADAPTER/ },
   { label: 'IPC send command', re: /["']?cmd["']?\s*:\s*["']send["']/ },
   { label: 'reachable sendMessage(', re: /sendMessage\s*\(/ },
 ]
 const REQUIRED = ['win/cli.mjs', 'package.json']
 const REQUIRED_PREFIX = 'node_modules/@whiskeysockets/baileys/'
+const MANIFEST = 'node_modules/.readonly-manifest.sha256'
+
+function sha256(data) {
+  return crypto.createHash('sha256').update(data).digest('hex')
+}
+
+function verifyDependencyManifest(entries, findings) {
+  const manifest = entries.find((entry) => entry.name === MANIFEST)
+  if (!manifest) {
+    findings.push(`missing required entry: ${MANIFEST}`)
+    return
+  }
+  const listed = new Map()
+  for (const line of manifest.data.toString('utf8').split(/\r?\n/).filter(Boolean)) {
+    const match = line.match(/^([a-f0-9]{64}) {2}(.+)$/i)
+    if (!match || listed.has(match[2])) {
+      findings.push(`invalid dependency manifest line: ${line}`)
+      continue
+    }
+    listed.set(match[2], match[1].toLowerCase())
+  }
+  const actual = new Map(entries
+    .filter((entry) => entry.name.startsWith('node_modules/') && entry.name !== MANIFEST)
+    .map((entry) => [entry.name.slice('node_modules/'.length), sha256(entry.data)]))
+  for (const [name, digest] of actual) {
+    if (listed.get(name) !== digest) findings.push(`dependency hash mismatch: ${name}`)
+  }
+  for (const name of listed.keys()) {
+    if (!actual.has(name)) findings.push(`dependency missing from archive: ${name}`)
+  }
+}
 
 export function checkReadonly(zipPath) {
   const buf = fs.readFileSync(zipPath)
@@ -41,7 +74,9 @@ export function checkReadonly(zipPath) {
   if (entries.length === 0) findings.push('archive has no entries — nothing was verified')
 
   for (const e of entries) {
-    if (FORBIDDEN_FILE.test(e.name)) findings.push(`forbidden file: ${e.name}`)
+    if (!e.name.startsWith('node_modules/') && FORBIDDEN_FILE.test(e.name)) {
+      findings.push(`forbidden file: ${e.name}`)
+    }
   }
 
   const owned = entries.filter((e) => !e.name.startsWith('node_modules/'))
@@ -59,6 +94,7 @@ export function checkReadonly(zipPath) {
   if (!entries.some((e) => e.name.startsWith(REQUIRED_PREFIX))) {
     findings.push(`missing required entry: ${REQUIRED_PREFIX}`)
   }
+  verifyDependencyManifest(entries, findings)
 
   return { ok: findings.length === 0, findings, count: entries.length }
 }

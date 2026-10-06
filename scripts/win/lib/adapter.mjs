@@ -17,7 +17,8 @@
 import fs from 'fs'
 import path from 'path'
 import { createRequire } from 'module'
-import { rmrf } from './fsutil.mjs'
+import { isAllowed } from './allowlist.mjs'
+import { rmrf, writeFileAtomic } from './fsutil.mjs'
 
 const require = createRequire(import.meta.url)
 
@@ -163,9 +164,18 @@ export async function createAdapter({ paths, tz = 'America/Bogota', env = proces
   function attachCollectors(sock) {
     const contacts = {}
     const chats = new Map()
+    const chatMeta = new Map()
     const mergeContacts = (list) => { for (const c of list || []) if (c.id) contacts[c.id] = { ...contacts[c.id], ...c } }
     sock.ev.on('contacts.set', ({ contacts: list }) => mergeContacts(list))
     sock.ev.on('contacts.upsert', (list) => mergeContacts(list))
+    const mergeChatRecords = (list) => {
+      for (const chat of list || []) {
+        const jid = chat.id || chat.jid
+        if (!jid) continue
+        chatMeta.set(jid, { ...chatMeta.get(jid), ...chat })
+        if (!chats.has(jid)) chats.set(jid, [])
+      }
+    }
     const mergeMessages = (list) => {
       for (const msg of list || []) {
         const jid = msg.key?.remoteJid
@@ -175,19 +185,31 @@ export async function createAdapter({ paths, tz = 'America/Bogota', env = proces
         if (!arr.find((m) => m.key?.id === msg.key?.id)) arr.push({ __raw: msg })
       }
     }
-    sock.ev.on('messaging-history.set', ({ contacts: c, messages }) => { mergeContacts(c || []); mergeMessages(messages || []) })
+    sock.ev.on('messaging-history.set', ({ contacts: c, chats: list, messages }) => {
+      mergeContacts(c || [])
+      mergeChatRecords(list || [])
+      mergeMessages(messages || [])
+    })
     sock.ev.on('messages.upsert', ({ messages }) => mergeMessages(messages || []))
-    return { contacts, chats }
+    return { contacts, chats, chatMeta }
   }
 
-  async function toModel(sock, contacts, chats) {
+  function nameFor(jid, isGroup, contacts, chatMeta) {
+    const bare = jid.split('@')[0]
+    const meta = chatMeta?.get(jid) || {}
+    return isGroup
+      ? (meta.name || meta.subject || contacts[jid]?.name || contacts[jid]?.notify || bare)
+      : (meta.name || contacts[jid]?.notify || contacts[jid]?.name || `+${bare}`)
+  }
+
+  async function toModel(sock, contacts, chats, chatMeta, allow) {
     const out = []
     for (const [jid, list] of chats) {
+      // This is deliberately before mapMessage: a disallowed chat must not
+      // cause media downloads, even transiently.
+      if (!isAllowed(jid, allow)) continue
       const isGroup = baileys.isJidGroup(jid) || jid.includes('@broadcast')
-      const bare = jid.split('@')[0]
-      const name = isGroup
-        ? (contacts[jid]?.name || contacts[jid]?.notify || bare)
-        : (contacts[jid]?.notify || contacts[jid]?.name || `+${bare}`)
+      const name = nameFor(jid, isGroup, contacts, chatMeta)
       const mensajes = []
       for (const entry of list) {
         const mapped = await mapMessage(sock, entry.__raw, contacts, senderName, baileys)
@@ -199,14 +221,42 @@ export async function createAdapter({ paths, tz = 'America/Bogota', env = proces
     return out
   }
 
+  function toInventory(contacts, chats, chatMeta) {
+    const out = []
+    for (const [jid] of chats) {
+      const isGroup = baileys.isJidGroup(jid) || jid.includes('@broadcast')
+      out.push({ jid, nombre: nameFor(jid, isGroup, contacts, chatMeta), es_grupo: isGroup })
+    }
+    return out
+  }
+
+  function disconnectError(code) {
+    const badSessionCodes = new Set([
+      baileys.DisconnectReason?.badSession,
+      baileys.DisconnectReason?.loggedOut,
+      baileys.DisconnectReason?.connectionReplaced,
+      baileys.DisconnectReason?.forbidden,
+      baileys.DisconnectReason?.multideviceMismatch,
+      401, 403, 411, 440, 500,
+    ])
+    if (badSessionCodes.has(code)) return tagged('bad-session', `Session rejected by WhatsApp (${code})`)
+    return tagged('no-net', `Connection closed (${code ?? 'unknown'})`)
+  }
+
   function awaitConnection(sock, { onQR, onCode, phone, timeoutMs = 180000 }) {
     return new Promise((resolve, reject) => {
       let settled = false
-      const finish = (fn, arg) => { if (!settled) { settled = true; fn(arg) } }
+      let timeout
+      const finish = (fn, arg) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        fn(arg)
+      }
       sock.ev.on('creds.update', () => {})
       sock.ev.on('connection.update', async (u) => {
         const { connection, lastDisconnect, qr } = u
-        if (qr && onQR) onQR(qr)
+        if (qr && onQR) await onQR(qr)
         if (qr && phone && onCode) {
           try {
             const code = await sock.requestPairingCode(phone)
@@ -216,16 +266,14 @@ export async function createAdapter({ paths, tz = 'America/Bogota', env = proces
         if (connection === 'open') finish(resolve, { jid: sock.user?.id || null })
         if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode
-          if (code === baileys.DisconnectReason.loggedOut) {
-            finish(reject, tagged('bad-session', 'Logged out by WhatsApp'))
-          } else if (code === baileys.DisconnectReason.restartRequired) {
+          if (code === baileys.DisconnectReason.restartRequired) {
             // benign; Baileys will reconnect
           } else {
-            finish(reject, assertNetwork(tagged('no-net', `Connection closed (${code})`)))
+            finish(reject, disconnectError(code))
           }
         }
       })
-      setTimeout(() => finish(reject, tagged('no-net', 'Timed out waiting for WhatsApp')), timeoutMs)
+      timeout = setTimeout(() => finish(reject, tagged('no-net', 'Timed out waiting for WhatsApp')), timeoutMs)
     })
   }
 
@@ -243,39 +291,106 @@ export async function createAdapter({ paths, tz = 'America/Bogota', env = proces
     },
     async linkQR({ onQR } = {}) {
       const sock = await newSocket()
-      const { contacts, chats } = attachCollectors(sock)
-      void contacts; void chats
-      await awaitConnection(sock, { onQR })
-      return this.account()
+      try {
+        await awaitConnection(sock, { onQR })
+        return this.account()
+      } finally {
+        try { await sock.end(undefined) } catch { sock.ws?.close?.() }
+      }
     },
     async linkCode(phone, { onCode } = {}) {
       const sock = await newSocket()
-      attachCollectors(sock)
-      await awaitConnection(sock, { phone, onCode })
-      return this.account()
+      try {
+        await awaitConnection(sock, { phone, onCode })
+        return this.account()
+      } finally {
+        try { await sock.end(undefined) } catch { sock.ws?.close?.() }
+      }
     },
-    async fetchChats() {
+    async fetchChats({ allow = new Set() } = {}) {
       const sock = await newSocket()
-      const { contacts, chats } = attachCollectors(sock)
-      let done = false
-      await new Promise((resolve) => {
-        const idle = () => { if (!done) { done = true; resolve() } }
-        let timer = setTimeout(idle, 30000)
-        sock.ev.on('messaging-history.set', () => { clearTimeout(timer); timer = setTimeout(idle, 3000) })
-        sock.ev.on('connection.update', (u) => {
-          if (u.connection === 'open') { clearTimeout(timer); timer = setTimeout(idle, 30000) }
-          if (u.connection === 'close') {
-            const code = u.lastDisconnect?.error?.output?.statusCode
-            if (code === baileys.DisconnectReason.loggedOut) {
-              done = true
-              resolve(tagged('bad-session', 'Logged out by WhatsApp'))
-            }
+      const { contacts, chats, chatMeta } = attachCollectors(sock)
+      let opened = false
+      let historyTimer
+      try {
+        await new Promise((resolve, reject) => {
+          let settled = false
+          const finish = (fn, value) => {
+            if (settled) return
+            settled = true
+            clearTimeout(historyTimer)
+            clearTimeout(timeout)
+            fn(value)
           }
+          const timeout = setTimeout(() => finish(reject, tagged('no-net', 'Timed out waiting for WhatsApp')), 30000)
+          const finishAfterHistory = () => {
+            clearTimeout(historyTimer)
+            historyTimer = setTimeout(() => {
+              if (opened) finish(resolve)
+            }, 3000)
+          }
+          sock.ev.on('messaging-history.set', finishAfterHistory)
+          sock.ev.on('connection.update', (u) => {
+            if (u.connection === 'open') {
+              opened = true
+              historyTimer = setTimeout(() => finish(resolve), 30000)
+            }
+            if (u.connection === 'close') {
+              const code = u.lastDisconnect?.error?.output?.statusCode
+              if (code === baileys.DisconnectReason.restartRequired) return
+              finish(reject, disconnectError(code))
+            }
+          })
         })
-      }).then((err) => { if (err) throw err })
-      const model = await toModel(sock, contacts, chats)
-      try { await sock.end(undefined) } catch { sock.ws?.close?.() }
-      return model
+        if (!opened) throw tagged('no-net', 'WhatsApp never opened a connection')
+        return await toModel(sock, contacts, chats, chatMeta, allow)
+      } catch (err) {
+        throw assertNetwork(err)
+      } finally {
+        clearTimeout(historyTimer)
+        try { await sock.end(undefined) } catch { sock.ws?.close?.() }
+      }
+    },
+    async fetchChatInventory() {
+      const sock = await newSocket()
+      const { contacts, chats, chatMeta } = attachCollectors(sock)
+      let opened = false
+      let historyTimer
+      try {
+        await new Promise((resolve, reject) => {
+          let settled = false
+          const finish = (fn, value) => {
+            if (settled) return
+            settled = true
+            clearTimeout(historyTimer)
+            clearTimeout(timeout)
+            fn(value)
+          }
+          const timeout = setTimeout(() => finish(reject, tagged('no-net', 'Timed out waiting for WhatsApp')), 30000)
+          sock.ev.on('messaging-history.set', () => {
+            clearTimeout(historyTimer)
+            historyTimer = setTimeout(() => { if (opened) finish(resolve) }, 3000)
+          })
+          sock.ev.on('connection.update', (u) => {
+            if (u.connection === 'open') {
+              opened = true
+              historyTimer = setTimeout(() => finish(resolve), 30000)
+            }
+            if (u.connection === 'close') {
+              const code = u.lastDisconnect?.error?.output?.statusCode
+              if (code === baileys.DisconnectReason.restartRequired) return
+              finish(reject, disconnectError(code))
+            }
+          })
+        })
+        if (!opened) throw tagged('no-net', 'WhatsApp never opened a connection')
+        return toInventory(contacts, chats, chatMeta)
+      } catch (err) {
+        throw assertNetwork(err)
+      } finally {
+        clearTimeout(historyTimer)
+        try { await sock.end(undefined) } catch { sock.ws?.close?.() }
+      }
     },
     async logout() {
       try {
@@ -287,7 +402,7 @@ export async function createAdapter({ paths, tz = 'America/Bogota', env = proces
       try { await cleanupAuthTemps(paths.authDir) } catch {}
     },
     async stop() {
-      fs.writeFileSync(paths.stopFile, String(Date.now()))
+      writeFileAtomic(paths.stopFile, String(Date.now()), { tempRoot: path.join(paths.stateDir, '.tmp') })
       return { stopRequested: true }
     },
   }

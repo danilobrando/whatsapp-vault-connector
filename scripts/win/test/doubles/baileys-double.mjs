@@ -18,6 +18,13 @@
  */
 const ACCOUNT = { jid: '573001112233@s.whatsapp.net', mask: '+********2233' }
 
+export const doubleMetrics = {
+  inventoryCalls: 0,
+  fetchCalls: 0,
+  mappedMessages: 0,
+  downloadCalls: 0,
+}
+
 export function chatsFixture() {
   return [
     {
@@ -42,7 +49,7 @@ export function chatsFixture() {
       jid: '120363000000000009@g.us',
       nombre: 'No permitido',
       es_grupo: true,
-      mensajes: [{ ts: 1710000400, fromMe: false, author: 'X', text: 'secreto' }],
+      mensajes: [{ ts: 1710000400, fromMe: false, author: 'X', text: 'secreto', attachment: { kind: 'document', fileName: 'secreto.pdf', mime: 'application/pdf', data: Buffer.from('%PDF-should-not-download') } }],
     },
     {
       jid: '573009998877@s.whatsapp.net',
@@ -53,6 +60,10 @@ export function chatsFixture() {
   ]
 }
 
+export function inventoryFixture() {
+  return chatsFixture().map(({ jid, nombre, es_grupo }) => ({ jid, nombre, es_grupo }))
+}
+
 function tagged(kind, message) {
   const err = new Error(message)
   err.kind = kind
@@ -61,27 +72,51 @@ function tagged(kind, message) {
 
 export async function createAdapter({ env = process.env } = {}) {
   const mode = env.WA_DOUBLE_MODE || 'ok'
-  let linked = mode !== 'unlinked'
+  const startsUnlinked = new Set(['unlinked', 'qr-error', 'qr-timeout', 'code-error'])
+  let linked = !startsUnlinked.has(mode)
+  doubleMetrics.inventoryCalls = 0
+  doubleMetrics.fetchCalls = 0
+  doubleMetrics.mappedMessages = 0
+  doubleMetrics.downloadCalls = 0
 
   return {
     name: 'double',
     async linked() { return linked },
     async account() { return linked ? { ...ACCOUNT } : null },
     async linkQR({ onQR } = {}) {
-      if (onQR) onQR('DOUBLE-QR-PAYLOAD')
+      if (mode === 'qr-error') throw new Error('QR failed')
+      if (onQR) await onQR('DOUBLE-QR-PAYLOAD')
+      if (mode === 'qr-timeout') { const err = new Error('QR expired'); err.kind = 'no-net'; throw err }
       linked = true
       return { ...ACCOUNT }
     },
     async linkCode(phone, { onCode } = {}) {
+      if (mode === 'code-error') throw new Error('pairing failed')
       if (onCode) onCode('1234-5678')
       linked = true
       return { ...ACCOUNT }
     },
-    async fetchChats() {
-      if (mode === 'no-net') throw tagged('no-net', 'offline')
-      if (mode === 'bad-session') throw tagged('bad-session', 'invalid session')
+    async fetchChats({ allow } = {}) {
+      doubleMetrics.fetchCalls += 1
+      if (mode === 'no-net' || mode === 'close-408') throw tagged('no-net', 'connection closed (408)')
+      if (mode === 'close-500' || mode === 'bad-session' || mode === 'invalid-session') throw tagged('bad-session', 'connection closed (500)')
       if (mode === 'boom') throw new Error('unexpected internal failure')
-      return chatsFixture()
+      const allowed = allow instanceof Set ? new Set([...allow].map((jid) => String(jid).toLowerCase())) : new Set()
+      const chats = chatsFixture().filter((chat) => allowed.has(chat.jid.toLowerCase()))
+      for (const chat of chats) {
+        for (const message of chat.mensajes) {
+          doubleMetrics.mappedMessages += 1
+          if (message.attachment?.kind === 'document') doubleMetrics.downloadCalls += 1
+        }
+      }
+      return chats
+    },
+    async fetchChatInventory() {
+      doubleMetrics.inventoryCalls += 1
+      if (mode === 'no-net' || mode === 'close-408') throw tagged('no-net', 'connection closed (408)')
+      if (mode === 'close-500' || mode === 'bad-session' || mode === 'invalid-session') throw tagged('bad-session', 'connection closed (500)')
+      if (mode === 'boom') throw new Error('unexpected internal failure')
+      return inventoryFixture()
     },
     async runForeground({ onSync } = {}) {
       if (onSync) onSync({ chatsWritten: 2, messages: 6 })

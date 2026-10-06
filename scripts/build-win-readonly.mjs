@@ -32,7 +32,6 @@ const SCRIPTS = path.join(ROOT, 'scripts')
 
 const EXCLUDE_DIRS = new Set(['sharp', '.bin', '.cache'])
 const EXCLUDE_PREFIX = ['@img']
-const FORBIDDEN_FILE = /(^|\/)send[a-z-]*\.mjs$/i
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(name)
@@ -49,7 +48,6 @@ function walk(dir, base = dir, out = []) {
       if (EXCLUDE_PREFIX.some((p) => rel === p || rel.startsWith(p + '/'))) continue
       walk(full, base, out)
     } else if (entry.isFile()) {
-      if (FORBIDDEN_FILE.test(rel)) continue
       out.push({ rel, full })
     }
   }
@@ -60,7 +58,10 @@ function collect() {
   const entries = []
 
   // Connector source (kept under win/ so its relative imports resolve).
-  for (const f of walk(path.join(SCRIPTS, 'win'))) entries.push({ name: `win/${f.rel}`, full: f.full })
+  for (const f of walk(path.join(SCRIPTS, 'win'))) {
+    if (f.rel === 'test' || f.rel.startsWith('test/')) continue
+    entries.push({ name: `win/${f.rel}`, full: f.full })
+  }
   // The atomic auth writer the adapter reuses, and the package manifest.
   entries.push({ name: 'atomic-auth-state.mjs', full: path.join(SCRIPTS, 'atomic-auth-state.mjs') })
   entries.push({ name: 'package.json', full: path.join(SCRIPTS, 'package.json') })
@@ -69,10 +70,17 @@ function collect() {
   if (fs.existsSync(nodeVersion)) entries.push({ name: 'NODE-VERSION', full: nodeVersion })
   // Production dependencies, minus the excluded native peer.
   for (const f of walk(path.join(SCRIPTS, 'node_modules'))) {
-    if (FORBIDDEN_FILE.test(f.rel)) continue
     entries.push({ name: `node_modules/${f.rel}`, full: f.full })
   }
   return entries
+}
+
+function dependencyManifest(files) {
+  return files
+    .filter((file) => file.name.startsWith('node_modules/'))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((file) => `${crypto.createHash('sha256').update(file.data).digest('hex')}  ${file.name.slice('node_modules/'.length)}`)
+    .join('\n') + '\n'
 }
 
 function main() {
@@ -83,6 +91,7 @@ function main() {
   const outFile = path.join(outDir, name)
 
   const files = collect().map((e) => ({ name: e.name, data: fs.readFileSync(e.full) }))
+  files.push({ name: 'node_modules/.readonly-manifest.sha256', data: Buffer.from(dependencyManifest(files)) })
   const zip = writeZip(files)
 
   fs.mkdirSync(outDir, { recursive: true })

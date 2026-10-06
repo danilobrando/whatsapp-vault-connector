@@ -29,9 +29,9 @@ export function defaultStateDir(env = process.env, platform = process.platform) 
   const home = env.USERPROFILE || env.HOME || os.homedir()
   if (platform === 'win32') {
     const base = env.LOCALAPPDATA || path.join(home, 'AppData', 'Local')
-    return path.join(base, 'System3', 'whatsapp', VERSION)
+    return path.join(base, 'System3', 'whatsapp', VERSION, 'state')
   }
-  return path.join(home, '.local', 'share', 'System3', 'whatsapp', VERSION)
+  return path.join(home, '.local', 'share', 'System3', 'whatsapp', VERSION, 'state')
 }
 
 export function statePaths(stateDir) {

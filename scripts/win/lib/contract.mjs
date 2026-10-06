@@ -33,7 +33,13 @@ export const VERSION = readPackageVersion()
 
 /** The exact JSON the tray carries, one level up from the per-chat files. */
 export function contratoJson() {
-  return { contrato: CONTRATO_BANDEJA, origen: ORIGEN, version: VERSION }
+  return {
+    contrato: CONTRATO_BANDEJA,
+    origen: ORIGEN,
+    version: VERSION,
+    formato_fecha: 'dd/mm/aa',
+    reloj: '24h',
+  }
 }
 
 /** The `version` command payload, as required by the control contract. */

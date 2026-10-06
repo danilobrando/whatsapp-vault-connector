@@ -177,9 +177,13 @@ reachable `sendMessage`, and the build fails if one reappears.
 
 - **Node:** the official `win-x64` zip, pinned by version and SHA-256 in
   [`windows/NODE-VERSION`](windows/NODE-VERSION). Nothing is installed machine-wide.
-- **State:** everything lives under `%LOCALAPPDATA%\System3\whatsapp\3.0.0\`.
+- **State:** connector state lives under `%LOCALAPPDATA%\System3\whatsapp\3.0.0\state\`;
+  program files and portable Node stay outside that state directory.
 - **Scheduling:** not in the connector. It offers `run` (foreground) and `stop`;
   the product's launcher owns the schedule.
+- **Tray:** `contrato.json` declares `dd/mm/aa` and 24-hour time. Each allowed
+  chat gets a 16-hex SHA-256 JID folder with `chat.json` and a fresh lote per
+  sync; documents stay inside their lote and other media is omitted.
 
 ```bat
 :: unpack the artifact and portable Node under %LOCALAPPDATA%\System3\whatsapp\3.0.0\

@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
-## [3.0.0] — 2026-10-05
+## [3.0.0] — 2026-10-06
 
 The Windows port. The connector now also runs on Windows 10/11 **without
 administrator rights** — but as a **read-only** artifact: it links, reads and
@@ -16,7 +16,8 @@ cannot send. The macOS connector is unchanged in behaviour.
 - **Portable-Node install.** Runs on the official `win-x64` Node zip, pinned by
   version and SHA-256 in [`windows/NODE-VERSION`](windows/NODE-VERSION). No
   administrator, no Windows service, no scheduled task, no machine registry
-  key; all state lives under `%LOCALAPPDATA%\System3\whatsapp\<version>\`.
+  key; program files stay under `%LOCALAPPDATA%\System3\whatsapp\<version>\`,
+  while connector state lives below its `state\` child.
 - **Control contract** (`node cli.mjs <command>`): `version`, `link --qr`,
   `link --code <phone>`, `chats --json`, `allow --set <file>`, `status --json`,
   `run`, `stop`, `sync-once`, `logout`, `uninstall --yes`. Exit codes are part
@@ -27,13 +28,18 @@ cannot send. The macOS connector is unchanged in behaviour.
   resolved (without `sharp`), a `.sha256`, and is reproducible: sorted entries,
   fixed timestamps and stored compression make two builds hash identically.
 - **`scripts/check-readonly.mjs`** asserts the artifact has no send surface — no
-  `send*.mjs`, no IPC `send`, no `whatsapp_send`, no reachable `sendMessage(` —
-  and fails on an injected `send.mjs` rather than passing vacuously.
-- **Tray format**: one `.txt` per permitted chat in the Spanish export format
-  (`dd/mm/aa, hh:mm - Nombre: mensaje`), documents written beside the chat as
-  `<8-digit index>-<name>`, every other attachment as `<adjunto omitido>`, and a
-  `contrato.json` with `{"contrato":1,"origen":"whatsapp-vault-connector",
-  "version":"3.0.0"}`. Only allow-listed chats are written, atomically.
+  `send`, `send-*` or `send_*` entrypoint outside dependencies, no IPC `send`, no
+  `whatsapp_send`, no adapter hook, and no reachable `sendMessage(`. It verifies
+  a SHA-256 manifest for every production dependency, so legitimate Baileys and
+  `ws` `sender*.js` files remain covered.
+- **Tray format**: `contrato.json` fixes `dd/mm/aa` and 24-hour time; each
+  allow-listed chat gets a 16-hex SHA-256 JID folder with `chat.json` and a new
+  `lote-<AAAAMMDDTHHMMSSZ>-<n>` on every sync. Each lote contains the Spanish
+  export `chat.txt`, `lote.json`, and its own document attachments; other media
+  is `<adjunto omitido>`. Lotes are built below `.tmp\` and renamed atomically.
+- **Privacy gates**: `chats --json` is a complete metadata-only inventory, and
+  `sync-once` passes the allow-list into the adapter before mapping or downloading
+  any message. Pairing material is purged on every link outcome.
 - **Scheduling is not in the connector.** It offers `run` (foreground) and
   `stop`; the product's launcher owns the schedule.
 
