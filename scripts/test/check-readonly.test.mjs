@@ -15,6 +15,19 @@ const CLEAN = [
   { name: 'win/cli.mjs', data: Buffer.from('export const cli = 1\n') },
   { name: 'win/lib/adapter.mjs', data: Buffer.from('export async function createAdapter() {}\n') },
   { name: 'package.json', data: Buffer.from('{"version":"3.0.0"}\n') },
+  { name: 'node_modules/@whiskeysockets/baileys/package.json', data: Buffer.from('{"name":"@whiskeysockets/baileys","version":"6.7.24"}\n') },
+  { name: 'node_modules/ws/package.json', data: Buffer.from('{"name":"ws","version":"8.22.0"}\n') },
+  {
+    name: 'node_modules/.readonly-packages.json',
+    data: Buffer.from(JSON.stringify({
+      schema: 1,
+      roots: ['@whiskeysockets/baileys', 'ws'],
+      packages: [
+        { path: '@whiskeysockets/baileys', name: '@whiskeysockets/baileys', version: '6.7.24' },
+        { path: 'ws', name: 'ws', version: '8.22.0' },
+      ],
+    }) + '\n'),
+  },
   // Baileys itself defines sendMessage; the content scan is scoped so this is fine.
   { name: 'node_modules/@whiskeysockets/baileys/lib/index.js', data: Buffer.from('function sendMessage(jid, msg) {}\n') },
   // Legitimate third-party sender*.js files are positive cases, not violations.
@@ -76,6 +89,16 @@ test('fails when the test-only adapter hook reappears in production', () => {
   const result = checkReadonly(file)
   assert.equal(result.ok, false)
   assert.match(result.findings.join('\n'), /WA_WIN_ADAPTER/)
+})
+
+test('fails when a dependency outside the calculated closure is injected', () => {
+  const file = zipTo([...CLEAN,
+    { name: 'node_modules/not-in-closure/package.json', data: Buffer.from('{"name":"not-in-closure","version":"1.0.0"}\n') },
+    { name: 'node_modules/not-in-closure/index.js', data: Buffer.from('export const injected = true\n') },
+  ])
+  const result = checkReadonly(file)
+  assert.equal(result.ok, false)
+  assert.match(result.findings.join('\n'), /outside production closure: not-in-closure\/package\.json/)
 })
 
 test('fails on an empty archive instead of passing vacuously', () => {

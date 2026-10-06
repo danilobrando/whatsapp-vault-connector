@@ -35,6 +35,7 @@ const FORBIDDEN_CONTENT = [
 const REQUIRED = ['win/cli.mjs', 'package.json']
 const REQUIRED_PREFIX = 'node_modules/@whiskeysockets/baileys/'
 const MANIFEST = 'node_modules/.readonly-manifest.sha256'
+const PACKAGE_MANIFEST = 'node_modules/.readonly-packages.json'
 
 function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex')
@@ -66,6 +67,78 @@ function verifyDependencyManifest(entries, findings) {
   }
 }
 
+function verifyPackageManifest(entries, findings) {
+  const manifest = entries.find((entry) => entry.name === PACKAGE_MANIFEST)
+  if (!manifest) {
+    findings.push(`missing required entry: ${PACKAGE_MANIFEST}`)
+    return
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(manifest.data.toString('utf8'))
+  } catch (err) {
+    findings.push(`invalid package manifest: ${err.message}`)
+    return
+  }
+  if (parsed.schema !== 1 || !Array.isArray(parsed.packages) || !Array.isArray(parsed.roots)) {
+    findings.push(`invalid package manifest: expected schema 1, roots and packages`)
+    return
+  }
+
+  const allowed = new Map()
+  for (const item of parsed.packages) {
+    if (!item || typeof item.path !== 'string' || !item.path || allowed.has(item.path)) {
+      findings.push(`invalid package manifest entry: ${JSON.stringify(item)}`)
+      continue
+    }
+    allowed.set(item.path, item)
+  }
+
+  const controlFiles = new Set([PACKAGE_MANIFEST, MANIFEST])
+  const packageRoots = (file) => {
+    const parts = file.split('/')
+    const roots = []
+    const endOfPackageName = (index) => parts[index]?.startsWith('@') ? index + 2 : index + 1
+    let end = endOfPackageName(0)
+    roots.push(parts.slice(0, end).join('/'))
+    for (let i = end; i < parts.length; i++) {
+      if (parts[i] !== 'node_modules' || i + 1 >= parts.length) continue
+      end = endOfPackageName(i + 1)
+      roots.push(parts.slice(0, end).join('/'))
+      i = end - 1
+    }
+    return roots
+  }
+
+  const dependencyFiles = entries
+    .filter((entry) => entry.name.startsWith('node_modules/'))
+    .map((entry) => entry.name.slice('node_modules/'.length))
+    .filter((name) => !controlFiles.has(`node_modules/${name}`))
+
+  for (const file of dependencyFiles) {
+    for (const pkg of packageRoots(file)) {
+      if (!allowed.has(pkg)) findings.push(`dependency outside production closure: ${file}`)
+    }
+  }
+
+  for (const [pkgPath, item] of allowed) {
+    const packageFile = entries.find((entry) => entry.name === `node_modules/${pkgPath}/package.json`)
+    if (!packageFile) {
+      findings.push(`package missing from archive: ${pkgPath}`)
+      continue
+    }
+    try {
+      const packageJson = JSON.parse(packageFile.data.toString('utf8'))
+      if (packageJson.name !== item.name || packageJson.version !== item.version) {
+        findings.push(`package manifest mismatch: ${pkgPath}`)
+      }
+    } catch (err) {
+      findings.push(`invalid package.json: ${pkgPath} (${err.message})`)
+    }
+  }
+}
+
 export function checkReadonly(zipPath) {
   const buf = fs.readFileSync(zipPath)
   const entries = readZip(buf)
@@ -94,6 +167,7 @@ export function checkReadonly(zipPath) {
   if (!entries.some((e) => e.name.startsWith(REQUIRED_PREFIX))) {
     findings.push(`missing required entry: ${REQUIRED_PREFIX}`)
   }
+  verifyPackageManifest(entries, findings)
   verifyDependencyManifest(entries, findings)
 
   return { ok: findings.length === 0, findings, count: entries.length }

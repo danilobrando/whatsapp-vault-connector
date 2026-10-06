@@ -24,9 +24,12 @@ cannot send. The macOS connector is unchanged in behaviour.
   of the contract: `0` ok · `2` usage · `3` not linked · `4` no network ·
   `5` invalid session · `10` internal.
 - **Read-only artifact** `whatsapp-connector-win-readonly-v3.0.0.zip`, built by
-  `scripts/build-win-readonly.mjs`. It carries production dependencies already
-  resolved (without `sharp`), a `.sha256`, and is reproducible: sorted entries,
-  fixed timestamps and stored compression make two builds hash identically.
+  `scripts/build-win-readonly.mjs`. It carries only the installed production
+  dependency closure imported by `win/` and `atomic-auth-state.mjs`: the MCP
+  SDK, Express and `proxy-addr` are not shipped. A minimal package manifest,
+  lockfile and closure manifest make the tree auditable; `sharp` remains
+  excluded as an unused native peer. The `.sha256` and sorted entries with
+  fixed timestamps make two builds hash identically.
 - **`scripts/check-readonly.mjs`** asserts the artifact has no send surface — no
   `send`, `send-*` or `send_*` entrypoint outside dependencies, no IPC `send`, no
   `whatsapp_send`, no adapter hook, and no reachable `sendMessage(`. It verifies
