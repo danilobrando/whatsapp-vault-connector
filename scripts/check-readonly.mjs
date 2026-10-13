@@ -11,12 +11,8 @@
  *
  *   node scripts/check-readonly.mjs <artifact.zip>   → 0 clean, 1 violation
  *
- * The guarantee is structural, not a promise: no `send*.mjs`, no IPC `send`, no
- * `whatsapp_send` tool and no reachable `sendMessage(` in the connector's own
- * code. Third-party libraries (Baileys itself) legitimately contain
- * `sendMessage`, so the content scan is scoped to connector-owned files while
- * the file-name scan covers the whole archive — an injected `send.mjs` anywhere
- * fails, which is exactly the negative test.
+ * Match System 3's static rules for every connector-owned file, including
+ * comments. Dependency files are checked through their SHA-256 manifest.
  *
  * A missing connector or Baileys is also a failure: an empty archive must not
  * pass as "clean" by having nothing to find.
@@ -25,13 +21,18 @@ import fs from 'fs'
 import crypto from 'crypto'
 import { readZip } from './lib/zip.mjs'
 
-const FORBIDDEN_FILE = /(^|\/)send(?:[-_].+)?\.(?:js|mjs|cjs)$/i
+const FORBIDDEN_FILE = /(^|\/)send(?:[-_].*)?\.(?:js|mjs|cjs)$/i
+const TEST_DIRS = new Set(['test', 'tests', '__tests__', '__mocks__', 'dobles', 'doble', 'fixtures'])
+const TEST_FILE = /(?:\.(?:test|spec)\.[^.]+$|doble|double|fake|mock)/i
 const FORBIDDEN_CONTENT = [
-  { label: 'whatsapp_send tool', re: /whatsapp_send/ },
-  { label: 'WA_WIN_ADAPTER hook', re: /WA_WIN_ADAPTER/ },
-  { label: 'IPC send command', re: /["']?cmd["']?\s*:\s*["']send["']/ },
-  { label: 'reachable sendMessage(', re: /sendMessage\s*\(/ },
+  { label: 'whatsapp_send', re: /whatsapp_send/ },
+  { label: 'WA_WIN_ADAPTER', re: /WA_WIN_ADAPTER/ },
+  { label: 'comando_send', re: /\bprocess\s*\.\s*send\b|(["'`])send\1/ },
+  { label: 'sendMessage', re: /\bsendMessage\s*\(/ },
 ]
+const DYNAMIC_LOAD = /\b(?:import|require)\s*\(\s*([^)]*)\)/gs
+const LITERAL_SPECIFIER = /^\s*(["'])[^"'`$]*\1\s*$/
+const PROCESS_ENV = /\bprocess\s*\.\s*env\b/
 const REQUIRED = ['win/cli.mjs', 'package.json']
 const REQUIRED_PREFIX = 'node_modules/@whiskeysockets/baileys/'
 const MANIFEST = 'node_modules/.readonly-manifest.sha256'
@@ -146,18 +147,23 @@ export function checkReadonly(zipPath) {
 
   if (entries.length === 0) findings.push('archive has no entries — nothing was verified')
 
-  for (const e of entries) {
-    if (!e.name.startsWith('node_modules/') && FORBIDDEN_FILE.test(e.name)) {
-      findings.push(`forbidden file: ${e.name}`)
-    }
-  }
-
   const owned = entries.filter((e) => !e.name.startsWith('node_modules/'))
   for (const e of owned) {
-    if (!/\.(mjs|cjs|js|json|sh|ps1|txt|md)$/i.test(e.name)) continue
-    const text = e.data.toString('utf8')
+    const parts = e.name.split('/')
+    if (FORBIDDEN_FILE.test(parts.at(-1))) findings.push(`forbidden file: ${e.name}`)
+    if (parts.slice(0, -1).some((part) => TEST_DIRS.has(part.toLowerCase())) || TEST_FILE.test(parts.at(-1))) {
+      findings.push(`test entry: ${e.name}`)
+    }
+    // Latin-1 preserves byte values, matching the product's byte-level scan.
+    const text = e.data.toString('latin1')
     for (const { label, re } of FORBIDDEN_CONTENT) {
       if (re.test(text)) findings.push(`${label} in ${e.name}`)
+    }
+    for (const match of text.matchAll(DYNAMIC_LOAD)) {
+      if (PROCESS_ENV.test(match[1]) || (!LITERAL_SPECIFIER.test(match[1]) && PROCESS_ENV.test(text))) {
+        findings.push(`carga_entorno in ${e.name}`)
+        break
+      }
     }
   }
 

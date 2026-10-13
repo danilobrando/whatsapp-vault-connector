@@ -77,6 +77,27 @@ test('fails when the connector gains a reachable sendMessage call', () => {
   assert.match(result.findings.join('\n'), /sendMessage/)
 })
 
+test('fails on a literal send command in a comment', () => {
+  const file = zipTo([...CLEAN, { name: 'win/lib/comment.mjs', data: Buffer.from('// no `send` command exists here\n') }])
+  const result = checkReadonly(file)
+  assert.equal(result.ok, false)
+  assert.match(result.findings.join('\n'), /comando_send in win\/lib\/comment\.mjs/)
+})
+
+test('matches the product rules for IPC, environment imports, and test entries', () => {
+  for (const [name, source, expected] of [
+    ['win/lib/ipc.mjs', '// process.send is disallowed\n', /comando_send/],
+    ['win/lib/load.mjs', 'import(process.env.MODULE)\n', /carga_entorno/],
+    ['win/lib/indirect.mjs', 'const p = process.env.MODULE; require(p)\n', /carga_entorno/],
+    ['win/lib/leak.bin', 'sendMessage(\n', /sendMessage/],
+    ['win/test/helper.mjs', 'export const helper = true\n', /test entry/],
+  ]) {
+    const result = checkReadonly(zipTo([...CLEAN, { name, data: Buffer.from(source) }]))
+    assert.equal(result.ok, false, name)
+    assert.match(result.findings.join('\n'), expected, name)
+  }
+})
+
 test('fails when the whatsapp_send tool or IPC send reappears', () => {
   const file = zipTo([...CLEAN, { name: 'win/lib/mcp.mjs', data: Buffer.from('const name = "whatsapp_send"\nconst cmd = { cmd: "send" }\n') }])
   const result = checkReadonly(file)

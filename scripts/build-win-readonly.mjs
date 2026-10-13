@@ -26,6 +26,7 @@ import crypto from 'crypto'
 import { builtinModules } from 'module'
 import { fileURLToPath } from 'url'
 import { writeZip } from './lib/zip.mjs'
+import { checkReadonly } from './check-readonly.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..') // repository root
@@ -270,6 +271,11 @@ function main() {
 
   fs.mkdirSync(outDir, { recursive: true })
   fs.writeFileSync(outFile, zip)
+  const readonly = checkReadonly(outFile)
+  if (!readonly.ok) {
+    fs.unlinkSync(outFile)
+    throw new Error(`System 3 read-only rules rejected the artifact:\n${readonly.findings.join('\n')}`)
+  }
   const sha = crypto.createHash('sha256').update(zip).digest('hex')
   fs.writeFileSync(`${outFile}.sha256`, `${sha}  ${name}\n`)
 
