@@ -26,7 +26,7 @@ function readPackageVersion() {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
     if (pkg && typeof pkg.version === 'string') return pkg.version
   } catch { /* fall through to the pinned value */ }
-  return '3.0.0'
+  return '3.0.1'
 }
 
 export const VERSION = readPackageVersion()

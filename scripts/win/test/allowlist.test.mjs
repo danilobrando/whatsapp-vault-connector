@@ -44,7 +44,7 @@ test('a group that is not allowed is not written; an allowed one is', () => {
   assert.deepEqual(contrato, {
     contrato: 1,
     origen: 'whatsapp-vault-connector',
-    version: '3.0.0',
+    version: '3.0.1',
     formato_fecha: 'dd/mm/aa',
     reloj: '24h',
   })

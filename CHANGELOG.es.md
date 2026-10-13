@@ -2,6 +2,11 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) · Versionado: [SemVer](https://semver.org/lang/es/)
 
+## [3.0.1] — 2026-10-13
+
+### Corregido — solo Windows
+- Corrige un comentario que hacía que el verificador de System 3 rechazara el artefacto; sin cambios de comportamiento.
+
 ## [2.8.1] — 2026-09-05
 
 ### Corregido

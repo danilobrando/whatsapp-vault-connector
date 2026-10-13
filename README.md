@@ -4,7 +4,7 @@ Keep a WhatsApp session alive on your Mac, write every conversation into your
 Obsidian vault as markdown, and let Claude Code read and send messages through
 it — with a health layer that tells you when it breaks instead of failing quietly.
 
-By [Danny Bravo](https://github.com/danilobrando) · MIT · **v3.0.0 — macOS alpha · Windows read-only**
+By [Danny Bravo](https://github.com/danilobrando) · MIT · **v3.0.1 — macOS alpha · Windows read-only**
 
 ```
    your phone ──QR──▶ ┌─────────────────────────────────────────┐
@@ -177,7 +177,7 @@ reachable `sendMessage`, and the build fails if one reappears.
 
 - **Node:** the official `win-x64` zip, pinned by version and SHA-256 in
   [`windows/NODE-VERSION`](windows/NODE-VERSION). Nothing is installed machine-wide.
-- **State:** connector state lives under `%LOCALAPPDATA%\System3\whatsapp\3.0.0\state\`;
+- **State:** connector state lives under `%LOCALAPPDATA%\System3\whatsapp\3.0.1\state\`;
   program files and portable Node stay outside that state directory.
 - **Scheduling:** not in the connector. It offers `run` (foreground) and `stop`;
   the product's launcher owns the schedule.
@@ -186,7 +186,7 @@ reachable `sendMessage`, and the build fails if one reappears.
   sync; documents stay inside their lote and other media is omitted.
 
 ```bat
-:: unpack the artifact and portable Node under %LOCALAPPDATA%\System3\whatsapp\3.0.0\
+:: unpack the artifact and portable Node under %LOCALAPPDATA%\System3\whatsapp\3.0.1\
 node cli.mjs version
 node cli.mjs link --code 57300XXXXXXX
 node cli.mjs allow --set allow.json
@@ -202,8 +202,8 @@ Build and verify the artifact (on any machine with the repo checked out):
 
 ```bash
 cd scripts && npm install --omit=optional
-node build-win-readonly.mjs          # writes windows/whatsapp-connector-win-readonly-v3.0.0.zip (+ .sha256)
-node check-readonly.mjs ../windows/whatsapp-connector-win-readonly-v3.0.0.zip
+node build-win-readonly.mjs          # writes windows/whatsapp-connector-win-readonly-v3.0.1.zip (+ .sha256)
+node check-readonly.mjs ../windows/whatsapp-connector-win-readonly-v3.0.1.zip
 node --test                          # the test suite, including the read-only negative test
 ```
 

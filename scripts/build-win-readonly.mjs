@@ -7,7 +7,7 @@
  */
 
 /**
- * Build `whatsapp-connector-win-readonly-v3.0.0.zip`.
+ * Build `whatsapp-connector-win-readonly-v3.0.1.zip`.
  *
  * The artifact is what the product's launcher downloads onto a Windows 11
  * machine with no administrator: portable Node (documented in

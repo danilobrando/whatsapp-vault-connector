@@ -14,7 +14,7 @@ function tmp() {
 const CLEAN = [
   { name: 'win/cli.mjs', data: Buffer.from('export const cli = 1\n') },
   { name: 'win/lib/adapter.mjs', data: Buffer.from('export async function createAdapter() {}\n') },
-  { name: 'package.json', data: Buffer.from('{"version":"3.0.0"}\n') },
+  { name: 'package.json', data: Buffer.from('{"version":"3.0.1"}\n') },
   { name: 'node_modules/@whiskeysockets/baileys/package.json', data: Buffer.from('{"name":"@whiskeysockets/baileys","version":"6.7.24"}\n') },
   { name: 'node_modules/ws/package.json', data: Buffer.from('{"name":"ws","version":"8.22.0"}\n') },
   {

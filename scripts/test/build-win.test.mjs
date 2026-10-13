@@ -90,7 +90,7 @@ test('built ZIP passes the CLI version smoke test', () => {
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stderr, '')
   assert.equal(result.stdout.trim().split('\n').length, 1)
-  assert.deepEqual(JSON.parse(result.stdout), { version: '3.0.0', contrato_bandeja: 1, readonly: true })
+  assert.deepEqual(JSON.parse(result.stdout), { version: '3.0.1', contrato_bandeja: 1, readonly: true })
 })
 
 test('two independent Windows builds have the same SHA-256', () => {

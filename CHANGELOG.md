@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 English is canonical. A fuller Spanish account, written as the work happened,
 is kept alongside in [CHANGELOG.es.md](CHANGELOG.es.md).
 
+## [3.0.1] — 2026-10-13
+
+### Fixed — Windows only
+- Corrected a comment that caused the System 3 verifier to reject the artifact; no behavior changes.
+
 ## [3.0.0] — 2026-10-06
 
 The Windows port. The connector now also runs on Windows 10/11 **without

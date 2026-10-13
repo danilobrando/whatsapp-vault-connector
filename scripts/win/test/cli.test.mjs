@@ -31,7 +31,7 @@ function oneJsonLine(result) {
 test('version reports the tray contract without a session', () => {
   const res = run(['version'])
   assert.equal(res.status, 0, res.stderr)
-  assert.deepEqual(oneJsonLine(res), { version: '3.0.0', contrato_bandeja: 1, readonly: true })
+  assert.deepEqual(oneJsonLine(res), { version: '3.0.1', contrato_bandeja: 1, readonly: true })
 })
 
 test('chats --json returns the complete metadata inventory, regardless of allow-list', () => {
