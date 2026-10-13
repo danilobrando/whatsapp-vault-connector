@@ -7,7 +7,7 @@
  */
 
 /**
- * Build `whatsapp-connector-win-readonly-v3.0.1.zip`.
+ * Build `whatsapp-vault-connector-v3.0.1-win-x64.zip`.
  *
  * The artifact is what the product's launcher downloads onto a Windows 11
  * machine with no administrator: portable Node (documented in
@@ -262,7 +262,7 @@ function main() {
   const closure = calculateProductionClosure()
   const version = pkg.version
   const outDir = arg('--out', path.join(ROOT, 'windows'))
-  const name = `whatsapp-connector-win-readonly-v${version}.zip`
+  const name = `whatsapp-vault-connector-v${version}-win-x64.zip`
   const outFile = path.join(outDir, name)
 
   const files = collect(closure, pkg, lock).map((e) => ({ name: e.name, data: e.data || fs.readFileSync(e.full) }))

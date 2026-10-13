@@ -202,8 +202,8 @@ Build and verify the artifact (on any machine with the repo checked out):
 
 ```bash
 cd scripts && npm install --omit=optional
-node build-win-readonly.mjs          # writes windows/whatsapp-connector-win-readonly-v3.0.1.zip (+ .sha256)
-node check-readonly.mjs ../windows/whatsapp-connector-win-readonly-v3.0.1.zip
+node build-win-readonly.mjs          # writes windows/whatsapp-vault-connector-v3.0.1-win-x64.zip (+ .sha256)
+node check-readonly.mjs ../windows/whatsapp-vault-connector-v3.0.1-win-x64.zip
 node --test                          # the test suite, including the read-only negative test
 ```
 
