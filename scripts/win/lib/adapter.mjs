@@ -10,7 +10,7 @@
  * library. Everything else talks to the object this returns, which is why the
  * test suite can run the whole CLI against a double with no network.
  *
- * It is read-only by construction: there is no `send`, no `sendMessage` call and
+ * It is read-only by construction: there is no outgoing command or message-sending call and
  * no IPC that accepts a message. The build script enforces that absence at
  * package time (`check-readonly.mjs`).
  */
