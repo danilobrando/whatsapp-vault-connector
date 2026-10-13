@@ -269,13 +269,13 @@ function main() {
   files.push({ name: DEPENDENCY_MANIFEST, data: Buffer.from(dependencyManifest(files)) })
   const zip = writeZip(files)
 
-  fs.mkdirSync(outDir, { recursive: true })
-  fs.writeFileSync(outFile, zip)
-  const readonly = checkReadonly(outFile)
+  const readonly = checkReadonly(zip)
   if (!readonly.ok) {
-    fs.unlinkSync(outFile)
     throw new Error(`System 3 read-only rules rejected the artifact:\n${readonly.findings.join('\n')}`)
   }
+
+  fs.mkdirSync(outDir, { recursive: true })
+  fs.writeFileSync(outFile, zip)
   const sha = crypto.createHash('sha256').update(zip).digest('hex')
   fs.writeFileSync(`${outFile}.sha256`, `${sha}  ${name}\n`)
 

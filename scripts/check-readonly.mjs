@@ -141,7 +141,7 @@ function verifyPackageManifest(entries, findings) {
 }
 
 export function checkReadonly(zipPath) {
-  const buf = fs.readFileSync(zipPath)
+  const buf = Buffer.isBuffer(zipPath) ? zipPath : fs.readFileSync(zipPath)
   const entries = readZip(buf)
   const findings = []
 
